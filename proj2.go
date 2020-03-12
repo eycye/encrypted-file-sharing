@@ -86,11 +86,9 @@ func bytesToUUID(data []byte) (ret uuid.UUID) {
 type User struct {
 	Username string
 	UUID uuid.UUID
-	SignK userlib.DSSignKey
-	VerifyK userlib.PKEDecKey
-	PublicK []byte
-	PrivateK []byte
-	UEncK []byte
+	SignK userlib.DSSignKey // user signs message, pairs with VerifyK
+	PrivateK userlib.PKEDecKey // pairs with PublicK
+	UEncK []byte // symmetric key, param of SymEnc to encrypt user struct
 	HMACKey []byte
 	files map[string]uuid.UUID // map: String filename -> UUID UUIDtemp
 
@@ -98,6 +96,8 @@ type User struct {
 	// Note for JSON to marshal/unmarshal, the fields need to
 	// be public (start with a capital letter)
 }
+
+type
 
 // This creates a user.  It will only be called once for a user
 // (unless the keystore and datastore are cleared during testing purposes)
@@ -120,11 +120,23 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	var userdata User
 	userdataptr = &userdata
 
-	//TODO: This is a toy implementation.
+	// Initialize userdata
 	userdata.Username = username
-	//End of toy implementation
+	userdata.files = make(map[string]uuid.UUID)
+	concatKeys = userlib.Argon2Key(password, username, 32) // UEncK || HMACKey
+	userdata.UEncK = concatKeys[:16]
+	userdata.HMACKey = concatKeys[16:]
+	genUUID, _ = userlib.JMACEval(userdata.HMACKey, username)
+	userdata.UUID, _ = uuid.FromBytes(genUUID[:16])
 
-	return &userdata, nil
+	userdata.SignK, userdata.VerifyK, _ := userlib.DSKeyGen()
+	userdata.PublicK, userdata.PrivateK, _ := userlib.PKEKeyGen()
+	userlib.KeyStoreSet(username + "_vfyk", VerifyK)
+	userlib.KeystoreSet(username + "_enck", PublicK)
+
+	jsonUserdata, _ := json.Marshal(userdata)
+
+	return
 }
 
 // This fetches the user information from the Datastore.  It should

@@ -1,5 +1,7 @@
 package proj2
 
+// use methods and variables from https://github.com/cs161-staff/userlib/blob/master/userlib.go
+
 // CS 161 Project 2 Spring 2020
 // You MUST NOT change what you import.  If you add ANY additional
 // imports it will break the autograder. We will be very upset.
@@ -98,7 +100,18 @@ type User struct {
 }
 
 // encrypts data/struct and add to Datastore
-
+func StoringData(UUID *uuid.UUID, EncK *[]byte, HMACK *[]byte, jsonData *[]byte) (err error) {
+	IV := userlib.RandomBytes(AESBlockSize) // userlib.go
+	encryption := userlib.SymEnc(EncK, &IV, jsonData)// SymEnc(key []byte, iv []byte, plaintext []byte) ([]byte)
+	hmacd, err = userlib.HMACEval(HMACK, encryption)
+	if err != nil {
+		return
+	}
+	combinedEnc := append(encryption, hmacd...)
+	jsonEncryption, err := json.Marshal(*combinedEnc)
+	userlib.DatastoreSet(*UUID, jsonEncryption)
+	return
+}
 
 // This creates a user.  It will only be called once for a user
 // (unless the keystore and datastore are cleared during testing purposes)
@@ -124,11 +137,11 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	// Initialize userdata
 	userdata.Username = username
 	userdata.files = make(map[string]uuid.UUID)
-	concatKeys = userlib.Argon2Key(password, username, 32) // UEncK || HMACKey
-	userdata.UEncK = concatKeys[:16]
-	userdata.HMACKey = concatKeys[16:]
+	concatKeys = userlib.Argon2Key(password, username, uselib.AESKeySize + uselib.HashSize) // UEncK || HMACKey
+	userdata.UEncK = concatKeys[:uselib.AESKeySize]
+	userdata.HMACKey = concatKeys[uselib.AESKeySize:]
 	genUUID, _ = userlib.JMACEval(userdata.HMACKey, username)
-	userdata.UUID, _ = uuid.FromBytes(genUUID[:16])
+	userdata.UUID, _ = uuid.FromBytes(genUUID[:16]) // UUID 16 bytes
 
 	userdata.SignK, userdata.VerifyK, _ := userlib.DSKeyGen()
 	userdata.PublicK, userdata.PrivateK, _ := userlib.PKEKeyGen()

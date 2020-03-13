@@ -97,7 +97,8 @@ type User struct {
 	// be public (start with a capital letter)
 }
 
-type
+// encrypts data/struct and add to Datastore
+
 
 // This creates a user.  It will only be called once for a user
 // (unless the keystore and datastore are cleared during testing purposes)
@@ -135,9 +136,10 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	userlib.KeystoreSet(username + "_enck", PublicK)
 
 	jsonUserdata, _ := json.Marshal(userdata)
-
+	err = userdata.StoringData(&userdata.UUID, &userdata.UEncK, &userdata.HMACKey, &jsonUserdata)
 	return
 }
+
 
 // This fetches the user information from the Datastore.  It should
 // fail with an error if the user/password is invalid, or if the user

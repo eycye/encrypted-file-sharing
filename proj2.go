@@ -137,9 +137,9 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	// Initialize userdata
 	userdata.Username = username
 	userdata.files = make(map[string]uuid.UUID)
-	concatKeys = userlib.Argon2Key(password, username, uselib.AESKeySize + uselib.HashSize) // UEncK || HMACKey
-	userdata.UEncK = concatKeys[:uselib.AESKeySize]
-	userdata.HMACKey = concatKeys[uselib.AESKeySize:]
+	concatKeys = userlib.Argon2Key(password, username, userlib.AESKeySize + userlib.HashSize) // UEncK || HMACKey
+	userdata.UEncK = concatKeys[:userlib.AESKeySize]
+	userdata.HMACKey = concatKeys[userlib.AESKeySize:]
 	genUUID, _ = userlib.JMACEval(userdata.HMACKey, username)
 	userdata.UUID, _ = uuid.FromBytes(genUUID[:16]) // UUID 16 bytes
 

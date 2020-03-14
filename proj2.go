@@ -92,7 +92,7 @@ type User struct {
 	PrivateK userlib.PKEDecKey // pairs with PublicK
 	UEncK []byte // symmetric key, param of SymEnc to encrypt user struct
 	HMACKey []byte
-	files map[string]uuid.UUID // map: String filename -> UUID UUIDtemp
+	location map[string]uuid.UUID // map: String filename -> UUID location of file information
 
 	// You can add other fields here if you want...
 	// Note for JSON to marshal/unmarshal, the fields need to
@@ -102,18 +102,19 @@ type User struct {
 type File struct{
 	UUIDF uuid.UUID
 	SourceUUID uuid.UUID
-	FEncK []byte //symmetric key for encrypting the file
-	FHmacK[]byte
-	data []byte
-
+	FEncK []byte // symmetric key for encrypting the file
+	FHMACK []byte
+	data []byte // content
 }
+
 type CompFile struct {
 	UUIDCF uuid.UUID
 	CFEncK []byte
-	CFHmacK []byte
-	filesUUID []uuid.UUID
-	filesFEncK [][]byte
-	filesHMacK [][]byte
+	CFHMACK []byte
+	count int
+	filesUUID map[int]uuid.UUID
+	filesFEncK map[int][]byte
+	filesHMACK map[int][]byte
  }
 
 // encrypts data/struct and add to Datastore
@@ -174,12 +175,12 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 
 	// Initialize userdata
 	userdata.Username = username
-	userdata.files = make(map[string]uuid.UUID)
+	userdata.location = make(map[string]uuid.UUID)
 
 	concatKeys = userlib.Argon2Key(password, username, userlib.AESKeySize + userlib.HashSize) // UEncK || HMACKey
 	userdata.UEncK = concatKeys[:userlib.AESKeySize]
 	userdata.HMACKey = concatKeys[userlib.AESKeySize:]
-	genUUID, _ = userlib.JMACEval(userdata.HMACKey, username)
+	genUUID, _ = userlib.HMACEval(userdata.HMACKey, username)
 	userdata.UUID, _ = uuid.FromBytes(genUUID[:16]) // UUID 16 bytes
 
 	userdata.SignK, userdata.VerifyK, _ := userlib.DSKeyGen()
@@ -203,7 +204,7 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 	concatKeys = userlib.Argon2Key(password, username, userlib.AESKeySize + userlib.HashSize) // UEncK || HMACKey
 	userdata.UEncK = concatKeys[:userlib.AESKeySize]
 	userdata.HMACKey = concatKeys[userlib.AESKeySize:]
-	genUUID, _ = userlib.JMACEval(userdata.HMACKey, username)
+	genUUID, _ = userlib.HMACEval(userdata.HMACKey, username)
 	userdata.UUID, _ = uuid.FromBytes(genUUID[:16]) // UUID 16 bytes
 
 	bytesUserdata, err := userdata.GettingData(&userdata.UUID, &userdata.UEncK, &userdata.HMACKey)
@@ -223,14 +224,47 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 // The plaintext of the filename + the plaintext and length of the filename
 // should NOT be revealed to the datastore!
 func (userdata *User) StoreFile(filename string, data []byte) {
+	UUIDtemp = uuid.New()
+	userdata.location[filename] = UUIDtemp
+
 	var file File
+	file.data = data
+	concatFKeys = userlib.Argon2Key(password, file.UUIDF, AESKeySize * 2)
+	file.FEncK = concatFKeys[:userlib.AESKeySize]
+	file.FHMACK = concatFKeys[userlib.AESKeySize:]
+	file.UUIDF = uuid.New()
+
 	var compfile CompFile
+	compfile.UUIDCF = uuid.New()
+	file.SourceUUID = compfile.UUIDCF
+	concatCFKeys = userlib.Argon2Key(password, file.UUIDCF, AESKeySize * 2)
+	compfile.CFEncK = concatCFKeys[:userlib.AESKeySize]
+	compfile.CFHMACK = concatCFKeys[userlib.AESKeySize:]
+	compfile.count = 1
+	compfile.filesUUID = make(map[int]uuid.UUID)
+	compfile.filesUUID[0] = file.UUIDF
+	compfile.filesFEncK = make(map[int][]byte)
+	compfile.filesFEncK[0] = file.FEncK
+	compfile.filesHMACK = make(map[int][]byte)
+	compfile.filesHMACK[0] = file.FHMACK
+	//convert uuid to bytes so that we can store cfdata at UUIDtemp
+	//store file and cf.
+	CF_Data = [16 + ]
+
+	type CompFile struct {
+		UUIDCF uuid.UUID
+		CFEncK []byte
+		CFHMACK []byte
+		count int
+		filesUUID map[int]uuid.UUID
+		filesFEncK map[int][]byte
+		filesHMACK map[int][]byte
+	 }
+
 	//TODO: This is a toy implementation.
-
-
-	UUID, _ := uuid.FromBytes([]byte(filename + userdata.Username)[:16])
-	packaged_data, _ := json.Marshal(data)
-	userlib.DatastoreSet(UUID, packaged_data)
+	// UUID, _ := uuid.FromBytes([]byte(filename + userdata.Username)[:16])
+	// packaged_data, _ := json.Marshal(data)
+	// userlib.DatastoreSet(UUID, packaged_data)
 	//End of toy implementation
 
 	return

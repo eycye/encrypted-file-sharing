@@ -99,6 +99,23 @@ type User struct {
 	// be public (start with a capital letter)
 }
 
+type File struct{
+	UUIDF uuid.UUID
+	SourceUUID uuid.UUID
+	FEncK []byte //symmetric key for encrypting the file
+	FHmacK[]byte
+	data []byte
+
+}
+type CompFile struct {
+	UUIDCF uuid.UUID
+	CFEncK []byte
+	CFHmacK []byte
+	filesUUID []uuid.UUID
+	filesFEncK [][]byte
+	filesHMacK [][]byte
+ }
+
 // encrypts data/struct and add to Datastore
 func StoringData(UUID *uuid.UUID, EncK *[]byte, HMACK *[]byte, jsonData *[]byte) (err error) {
 	IV := userlib.RandomBytes(AESBlockSize) // userlib.go
@@ -110,6 +127,27 @@ func StoringData(UUID *uuid.UUID, EncK *[]byte, HMACK *[]byte, jsonData *[]byte)
 	combinedEnc := append(encryption, hmacd...)
 	jsonEncryption, err := json.Marshal(*combinedEnc)
 	userlib.DatastoreSet(*UUID, jsonEncryption)
+	return
+}
+
+func GettingData(UUID *uuid.UUID, EncK *[]byte, HMACK *[]byte) (data *[]byte, err error) {
+	jsonEncryption, _ = userlib.DatastoreGet(*UUID)
+	if !ok {
+		err = errors.New("UUID not found in keystore")
+		return
+	}
+	var combinedEnc [16 + 64]byte
+	err = json.Unmarshal(jsonEncryption, &combinedEnc)
+	if err!= nil {
+		return
+	}
+	encryption = combinedEnc[:16]
+	givenHmacd = combinedEnc[16:]
+	hmacd, err = userlib.HMACEval(HMACK, encryption)
+	if !userlib.HMACEqual(hmacd, givenHmacd) {
+		err = errors.New("Integrity/Authenticity violated")
+	}
+	data = userlib.SymDec(EncK, encryption)
 	return
 }
 
@@ -137,6 +175,7 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	// Initialize userdata
 	userdata.Username = username
 	userdata.files = make(map[string]uuid.UUID)
+
 	concatKeys = userlib.Argon2Key(password, username, userlib.AESKeySize + userlib.HashSize) // UEncK || HMACKey
 	userdata.UEncK = concatKeys[:userlib.AESKeySize]
 	userdata.HMACKey = concatKeys[userlib.AESKeySize:]
@@ -149,7 +188,7 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	userlib.KeystoreSet(username + "_enck", PublicK)
 
 	jsonUserdata, _ := json.Marshal(userdata)
-	err = userdata.StoringData(&userdata.UUID, &userdata.UEncK, &userdata.HMACKey, &jsonUserdata)
+	err = userdata.StoringData(&userdata.UUID, &userdata.UEncK, &userdata.HMACKey, &jsonUserdata) // encrypt user struct and store in Datastore
 	return
 }
 
@@ -161,7 +200,22 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 	var userdata User
 	userdataptr = &userdata
 
-	return userdataptr, nil
+	concatKeys = userlib.Argon2Key(password, username, userlib.AESKeySize + userlib.HashSize) // UEncK || HMACKey
+	userdata.UEncK = concatKeys[:userlib.AESKeySize]
+	userdata.HMACKey = concatKeys[userlib.AESKeySize:]
+	genUUID, _ = userlib.JMACEval(userdata.HMACKey, username)
+	userdata.UUID, _ = uuid.FromBytes(genUUID[:16]) // UUID 16 bytes
+
+	bytesUserdata, err := userdata.GettingData(&userdata.UUID, &userdata.UEncK, &userdata.HMACKey)
+	if err != nil {
+		if err.Error() == "UUID not found in keystore" {
+			err = errors.New("incorrect login credentials")
+		}
+		return
+	}
+
+	err = json.Unmarshal(*byteUserdata, userdataptr)
+	return
 }
 
 // This stores a file in the datastore.
@@ -169,8 +223,11 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 // The plaintext of the filename + the plaintext and length of the filename
 // should NOT be revealed to the datastore!
 func (userdata *User) StoreFile(filename string, data []byte) {
-
+	var file File
+	var compfile CompFile
 	//TODO: This is a toy implementation.
+
+
 	UUID, _ := uuid.FromBytes([]byte(filename + userdata.Username)[:16])
 	packaged_data, _ := json.Marshal(data)
 	userlib.DatastoreSet(UUID, packaged_data)
@@ -191,6 +248,7 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 // This loads a file from the Datastore.
 //
 // It should give an error if the file is corrupted in any way.
+
 func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 
 	//TODO: This is a toy implementation.

@@ -225,6 +225,7 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 // should NOT be revealed to the datastore!
 func (userdata *User) StoreFile(filename string, data []byte) {
 	UUIDtemp = uuid.New()
+	// figure out what to do if filename exists
 	userdata.location[filename] = UUIDtemp
 
 	var file File
@@ -251,22 +252,35 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 	//store file and cf.
 	CF_Data = [16 + ]
 
-	type CompFile struct {
-		UUIDCF uuid.UUID
-		CFEncK []byte
-		CFHMACK []byte
-		count int
-		filesUUID map[int]uuid.UUID
-		filesFEncK map[int][]byte
-		filesHMACK map[int][]byte
-	 }
+	// encrypt file & compfile
+	jsonFiledata, _ := json.Marshal(file)
+	err = userdata.StoringData(&file.UUIDF, &file.FEncK, &file.FHMACK, &jsonFiledata)
+	if err != nil {
+		userlib.DebugMsg("", err)
+		return
+	}
+	jsonCFdata, _ := json.Marshal(compfile)
+	err = userdata.StoringData(&compfile.UUIDCF, &compfile.CFEncK, &compfile.CFHMACK, &jsonCFdata)
+	if err != nil {
+		userlib.DebugMsg("", err)
+		return
+	}
+
+	// type CompFile struct {
+	// 	UUIDCF uuid.UUID
+	// 	CFEncK []byte
+	// 	CFHMACK []byte
+	// 	count int
+	// 	filesUUID map[int]uuid.UUID
+	// 	filesFEncK map[int][]byte
+	// 	filesHMACK map[int][]byte
+	//  }
 
 	//TODO: This is a toy implementation.
 	// UUID, _ := uuid.FromBytes([]byte(filename + userdata.Username)[:16])
 	// packaged_data, _ := json.Marshal(data)
 	// userlib.DatastoreSet(UUID, packaged_data)
 	//End of toy implementation
-
 	return
 }
 

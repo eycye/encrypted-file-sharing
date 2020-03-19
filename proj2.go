@@ -120,7 +120,8 @@ type CompFile struct {
 
 type Node struct {
  Children []*Node
- UUID uuid.UUID
+ //UUID uuid.UUID
+ Username string
 }
 
 // encrypts data/struct and add to Datastore
@@ -264,7 +265,7 @@ func (userdata *User) StoreFile(filename string, Data []byte) {
 	jsonEncryption, err := json.Marshal(*CF_Data)
 	userlib.DatastoreSet(UUIDtemp, jsonEncryption)
 	var node Node
-	node.UUID = userdata.UUID
+	node.Username = userdata.Username
 	var chdn []*Node
 	node.Children = chdn
 	compfile.Record = node
@@ -457,8 +458,8 @@ func (userdata *User) ShareFile(filename string, recipient string) (magic_string
 
 }
 
-func findByIdDFS(node *Node, uuid *uuid.UUID) {
-	if node.UUID == uuid {
+func findByIdDFS(node *Node, username string) {
+	if node.Username == username {
 		return node
 	}
   if len(node.Children) > 0 {
@@ -469,16 +470,100 @@ func findByIdDFS(node *Node, uuid *uuid.UUID) {
 	return nil
 }
 
+func appendByIdDFS(node *Node, UUIDCF uuid.UUID, CFEncK []byte, CFHMACK []byte) {
+	if node.Username != 'Deleted' {
+		node.UUIDCF = UUIDCF
+		node.CFEncK = CFEncK
+		node.CFHMACK = CFHMACK
+	}
+	if len(node.Children) > 0 {
+		for _, child := range node.Children {
+			findByIdDFS(child, UUIDCF, CFEncK, CFHMACK)
+		}
+	}
+}
+
 // Note recipient's filename can be different from the sender's filename.
 // The recipient should not be able to discover the sender's view on
 // what the filename even is!  However, the recipient must ensure that
 // it is authentically from the sender.
-func (userdata *User) ReceiveFile(filename string, sender string,
-	magic_string string) error {
+func (userdata *User) ReceiveFile(filename string, sender string, magic_string string) error {
+	unmarshalled := json.Unmarshal(magic_string)
+	signedmsg := userlib.SymDec(userdata.PrivateK, unmarshalled)
+	DSVerify(KeystoreGet(sender + "_vfyk"),signedmsg, )
 	return nil
 }
 
 // Removes target user's access.
 func (userdata *User) RevokeFile(filename string, target_username string) (err error) {
-	return
+	//verify the file exists
+	UUIDtemp, ok := userdata.Location[filename]
+	if !ok {
+		err = errors.New("user does not have access to file")
+		return
+	}
+	//getting the compfile from datastore
+	jsonEncryption, ok = userlib.DatastoreGet(*UUID)
+	if !ok {
+		err = errors.New("UUID not found in keystore")
+		return
+	}
+	var combined [16 + userlib.AESKeySize * 2]byte
+	err = json.Unmarshal(jsonEncryption, &combined)
+	if err!= nil {
+		return
+	}
+	UUIDCF, _ := uuid.Parse(combined[:16])
+	CFEncK := []byte(combined[16:16+userlib.AESKeySize-1])
+	CFHMACK := []byte(combined[16+userlib.AESKeySize:])
+	var compfile CompFile
+	compfile, err := userlib.GettingData(&UUIDCF, &CFEncK, &CFHMACK)
+	if err != nil {
+		err = errors.New("file not found")
+		return
+	}
+	record := compfile.Record
+	currnode := findByIdDFS(record, target_username)
+	currnode.Children = nil
+	currnode.Username = 'Deleted'
+	appendByIdDFS(record, )
+
+	}
+}
+
+type User struct {
+	Username string
+	UUID uuid.UUID
+	SignK userlib.DSSignKey // user signs message, pairs with VerifyK
+	PrivateK userlib.PKEDecKey // pairs with PublicK
+	UEncK []byte // symmetric key, param of SymEnc to encrypt user struct
+	HMACKey []byte
+	Location map[string]uuid.UUID // map: String filename -> UUID location of file information
+
+	// You can add other fields here if you want...
+	// Note for JSON to marshal/unmarshal, the fields need to
+	// be public (start with a capital letter)
+}
+type File struct{
+	UUIDF uuid.UUID
+	SourceUUID uuid.UUID
+	FEncK []byte // symmetric key for encrypting the file
+	FHMACK []byte
+	Data []byte // content
+}
+
+type CompFile struct {
+	UUIDCF uuid.UUID
+	CFEncK []byte
+	CFHMACK []byte
+	Count int
+	FilesUUID map[int]uuid.UUID
+	FilesFEncK map[int][]byte
+	FilesHMACK map[int][]byte
+	Record Node
+ }
+
+type Node struct {
+ Children []*Node
+ UUID uuid.UUID
 }

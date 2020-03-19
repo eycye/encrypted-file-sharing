@@ -120,7 +120,7 @@ type CompFile struct {
 
 type Node struct {
  Children []*Node
- //UUID uuid.UUID
+ UUIDreceive uuid.UUID
  Username string
 }
 
@@ -139,7 +139,7 @@ func StoringData(UUID *uuid.UUID, EncK *[]byte, HMACK *[]byte, jsonData *[]byte)
 }
 
 func GettingData(UUID *uuid.UUID, EncK *[]byte, HMACK *[]byte) (Data *[]byte, err error) {
-	jsonEncryption, ok = userlib.DatastoreGet(*UUID)
+	jsonEncryption, ok := userlib.DatastoreGet(*UUID)
 	if !ok {
 		err = errors.New("UUID not found in keystore")
 		return
@@ -238,7 +238,8 @@ func (userdata *User) StoreFile(filename string, Data []byte) {
 
 	var file File
 	file.Data = Data
-	concatFKeys = userlib.Argon2Key(password, file.UUIDF, AESKeySize * 2)
+	IV := string(userlib.RandomBytes(AESBlockSize))
+	concatFKeys = userlib.Argon2Key(IV, file.UUIDF, AESKeySize * 2)
 	file.FEncK = concatFKeys[:userlib.AESKeySize]
 	file.FHMACK = concatFKeys[userlib.AESKeySize:]
 	file.UUIDF = uuid.New()
@@ -246,7 +247,7 @@ func (userdata *User) StoreFile(filename string, Data []byte) {
 	var compfile CompFile
 	compfile.UUIDCF = uuid.New()
 	file.SourceUUID = compfile.UUIDCF
-	concatCFKeys = userlib.Argon2Key(password, file.UUIDCF, AESKeySize * 2)
+	concatCFKeys = userlib.Argon2Key(IV, file.UUIDCF, AESKeySize * 2)
 	compfile.CFEncK = concatCFKeys[:userlib.AESKeySize]
 	compfile.CFHMACK = concatCFKeys[userlib.AESKeySize:]
 	compfile.Count = 1
@@ -266,6 +267,7 @@ func (userdata *User) StoreFile(filename string, Data []byte) {
 	userlib.DatastoreSet(UUIDtemp, jsonEncryption)
 	var node Node
 	node.Username = userdata.Username
+	node.UUIDreceive = userdata.UUID
 	var chdn []*Node
 	node.Children = chdn
 	compfile.Record = node
@@ -303,7 +305,7 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 		err = errors.New("UUID not found in keystore")
 		return
 	}
-	jsonEncryption, _ = userlib.DatastoreGet(*UUID)
+	jsonEncryption, _ := userlib.DatastoreGet(*UUID)
 	if !ok {
 		err = errors.New("UUID not found in keystore")
 		return
@@ -319,7 +321,8 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 
 	var file File
 	file.Data = data
-	concatFKeys = userlib.Argon2Key(password, file.UUIDF, AESKeySize * 2)
+	IV := string(userlib.RandomBytes(AESBlockSize))
+	concatFKeys = userlib.Argon2Key(IV, file.UUIDF, AESKeySize * 2)
 	file.FEncK = concatFKeys[:userlib.AESKeySize]
 	file.FHMACK = concatFKeys[userlib.AESKeySize:]
 	file.UUIDF = uuid.New()
@@ -360,7 +363,7 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 		err = errors.New("UUID not found in keystore")
 		return
 	}
-	jsonEncryption, _ = userlib.DatastoreGet(*UUID)
+	jsonEncryption, _ := userlib.DatastoreGet(*UUID)
 	if !ok {
 		err = errors.New("UUID not found in keystore")
 		return
@@ -415,13 +418,14 @@ func (userdata *User) ShareFile(filename string, recipient string) (magic_string
 			return
 		}
 			//getting the compfile from datastore
-		jsonEncryption, ok = userlib.DatastoreGet(*UUID)
+		jsonEncryption, ok := userlib.DatastoreGet(*UUIDtemp)
 		if !ok {
 			err = errors.New("UUID not found in keystore")
 			return
 		}
 		UUIDreceive = uuid.New()
 		userlib.DatastoreSet(UUIDreceive, jsonEncryption)
+
 		var combined [16 + userlib.AESKeySize * 2]byte
 		err = json.Unmarshal(jsonEncryption, &combined)
 		if err!= nil {
@@ -430,7 +434,8 @@ func (userdata *User) ShareFile(filename string, recipient string) (magic_string
 		UUIDCF, _ := uuid.Parse(combined[:16])
 		CFEncK := []byte(combined[16:16+userlib.AESKeySize-1])
 		CFHMACK := []byte(combined[16+userlib.AESKeySize:])
-		var compfile CompFile
+
+		// var compfile CompFile
 	 	compfile, err := userlib.GettingData(&UUIDCF, &CFEncK, &CFHMACK)
 		if err != nil {
 			err = errors.New("file not found")
@@ -447,15 +452,19 @@ func (userdata *User) ShareFile(filename string, recipient string) (magic_string
 			userlib.DebugMsg("", err)
 			return
 		}
-			//sign the msg, then enc with receiver's publickey
-		var msg [len(combined) + 16]byte
-		msg = userlib.DSSign(userdata.SignK, msg)
+
+		// access_token: append UUIDreceive to the end, sign the msg, then enc with receiver's publickey
 		IV := userlib.RandomBytes(AESBlockSize)
-		encmsg := userlib.SymEnc(KeystoreGet(recipient+"_enck"), &IV, msg)
-		magic_string_Bytes, _ := json.Marshal(encmsg)
+
+		msg := UUIDreceive.String()
+		encmsg := userlib.SymEnc(KeystoreGet(recipient+"_enck"), &IV,  msg)
+		signed := userlib.DSSign(userdata.SignK, msg)
+		encsign := userlib.SymEnc(KeystoreGet(recipient+"_enck"), &IV,  signed)
+		//encrypt the signature and append it to encmsg
+		combined := append(encmsg, encsign)
+		magic_string_Bytes, _ := json.Marshal(combined)
 		magic_string := string(magic_string_Bytes)
 		return
-
 }
 
 func findByIdDFS(node *Node, username string) {
@@ -470,15 +479,14 @@ func findByIdDFS(node *Node, username string) {
 	return nil
 }
 
-func appendByIdDFS(node *Node, UUIDCF uuid.UUID, CFEncK []byte, CFHMACK []byte) {
-	if node.Username != 'Deleted' {
-		node.UUIDCF = UUIDCF
-		node.CFEncK = CFEncK
-		node.CFHMACK = CFHMACK
+func appendByIdDFS(node *Node, jsonEncryption []byte) {
+	if node.Username != "Deleted" {
+		UUIDreceive := node.UUIDreceive
+		userlib.DatastoreSet(*UUIDreceive, jsonEncryption)
 	}
 	if len(node.Children) > 0 {
 		for _, child := range node.Children {
-			findByIdDFS(child, UUIDCF, CFEncK, CFHMACK)
+			findByIdDFS(child, jsonEncryption)
 		}
 	}
 }
@@ -488,9 +496,23 @@ func appendByIdDFS(node *Node, UUIDCF uuid.UUID, CFEncK []byte, CFHMACK []byte) 
 // what the filename even is!  However, the recipient must ensure that
 // it is authentically from the sender.
 func (userdata *User) ReceiveFile(filename string, sender string, magic_string string) error {
-	unmarshalled := json.Unmarshal(magic_string)
-	signedmsg := userlib.SymDec(userdata.PrivateK, unmarshalled)
-	DSVerify(KeystoreGet(sender + "_vfyk"),signedmsg, )
+	var magic_string_Bytes []byte
+	err = json.Unmarshal([]byte(magic_string), &magic_string_Bytes)
+	if err!= nil {
+		return
+	}
+	msg := SymDec(userdata.PrivateK, magic_string_Bytes[:len(magic_string) / 2]) // []byte of UUIDreceive
+	signed := SymDec(userdata.PrivateK, magic_string_Bytes[len(magic_string) / 2:])
+	senderVerifyK, ok := userlib.KeystoreGet(sender + "_vfyk")
+	if !ok {
+		return errors.New("sender doesn't exist")
+	}
+	err = userlib.DSVerify(senderVerifyK, msg, signed)
+	if err != nil {
+		return errors.New("verification failed for msg")
+	}
+	UUIDreceive = bytesToUUID(msg)
+	userdata.Location[filename] = UUIDreceive
 	return nil
 }
 
@@ -503,7 +525,7 @@ func (userdata *User) RevokeFile(filename string, target_username string) (err e
 		return
 	}
 	//getting the compfile from datastore
-	jsonEncryption, ok = userlib.DatastoreGet(*UUID)
+	jsonEncryption, ok := userlib.DatastoreGet(*UUID)
 	if !ok {
 		err = errors.New("UUID not found in keystore")
 		return
@@ -525,45 +547,23 @@ func (userdata *User) RevokeFile(filename string, target_username string) (err e
 	record := compfile.Record
 	currnode := findByIdDFS(record, target_username)
 	currnode.Children = nil
-	currnode.Username = 'Deleted'
-	appendByIdDFS(record, )
+	currnode.Username = "Deleted"
+	IV := string(userlib.RandomBytes(AESBlockSize))
+	compfile.UUIDCF = uuid.New()
+	concatFKeys = userlib.Argon2Key(IV, compfile.UUIDCF, AESKeySize * 2)
+	compfile.CFEncK = concatFKeys[:userlib.AESKeySize]
+	compfile.CFHMACK = concatFKeys[userlib.AESKeySize:]
 
+	stringCFEncK := string(compfile.CFEncK)
+	stringCFHMACK := string(compfile.CFHMACK)
+	CF_Data := compfile.UUIDCF.String() + stringCFEncK + stringCFHMACK
+	jsonEncryptionupdated, err := json.Marshal(*CF_Data)
+	appendByIdDFS(record, jsonEncryptionupdated)
+
+	err = userdata.StoringData(&compfile.UUIDCF, &compfile.CFEncK, &compfile.CFHMACK, &jsonEncryptionupdated)
+	if err != nil {
+		userlib.DebugMsg("", err)
+		return
 	}
-}
-
-type User struct {
-	Username string
-	UUID uuid.UUID
-	SignK userlib.DSSignKey // user signs message, pairs with VerifyK
-	PrivateK userlib.PKEDecKey // pairs with PublicK
-	UEncK []byte // symmetric key, param of SymEnc to encrypt user struct
-	HMACKey []byte
-	Location map[string]uuid.UUID // map: String filename -> UUID location of file information
-
-	// You can add other fields here if you want...
-	// Note for JSON to marshal/unmarshal, the fields need to
-	// be public (start with a capital letter)
-}
-type File struct{
-	UUIDF uuid.UUID
-	SourceUUID uuid.UUID
-	FEncK []byte // symmetric key for encrypting the file
-	FHMACK []byte
-	Data []byte // content
-}
-
-type CompFile struct {
-	UUIDCF uuid.UUID
-	CFEncK []byte
-	CFHMACK []byte
-	Count int
-	FilesUUID map[int]uuid.UUID
-	FilesFEncK map[int][]byte
-	FilesHMACK map[int][]byte
-	Record Node
- }
-
-type Node struct {
- Children []*Node
- UUID uuid.UUID
+	return
 }

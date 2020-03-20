@@ -471,7 +471,7 @@ func findByIdDFS(node *Node, username string) {
 	if node.Username == username {
 		return node
 	}
-  if len(node.Children) > 0 {
+	if len(node.Children) > 0 {
 		for _, child := range node.Children {
 			findByIdDFS(child, id)
 		}

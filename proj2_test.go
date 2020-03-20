@@ -5,7 +5,7 @@ package proj2
 
 import (
 	"testing"
-	"reflect"
+	"reflect" // https://golang.org/pkg/reflect/
 	"github.com/cs161-staff/userlib"
 	_ "encoding/json"
 	_ "encoding/hex"
@@ -26,14 +26,49 @@ func TestInit(t *testing.T) {
 	t.Log("Initialization test")
 
 	// You can set this to false!
-	userlib.SetDebugStatus(true)
+	userlib.SetDebugStatus(false)
 
-	u, err := InitUser("alice", "fubar")
-	if err != nil {
+	alice, err := InitUser("alice", "fubar")
+	if alice == nil || err != nil {
 		// t.Error says the test fails
 		t.Error("Failed to initialize user", err)
 		return
 	}
+
+	alice2, err := GetUser("alice", "fubar")
+	if alice2 == nil || err != nil {
+		// t.Error says the test fails
+		t.Error("Failed to get existing user", err)
+		return
+	}
+
+	aliceBytes, _ := json.Marshal(alice)
+	alice2Bytes, _ := json.Marshal(alice2)
+	if !reflect.DeepEqual(aliceBytes, alice2Bytes) {
+		t.Error("InitUser and GetUser didn't obtain same user")
+	}
+
+	for _, val := range userlib.DatastoreGetMap() {
+		if strings.Contains("alice", string(val)) {
+			t.Error("Username not encoded")
+			return
+		}
+	}
+
+	notalice, err := GetUser("alice", "ufbar")
+	if notalice != nil || err == nil {
+		// t.Error says the test fails
+		t.Error("User entered wrong password", err)
+		return
+	}
+
+	notuser, err := GetUser("bob", "fubar")
+	if notuser != nil || err == nil {
+		// t.Error says the test fails
+		t.Error("User should not exist", err)
+		return
+	}
+
 	// t.Log() only produces output if you run with "go test -v"
 	t.Log("Got user", u)
 	// If you want to comment the line above,
@@ -94,7 +129,7 @@ func TestShare(t *testing.T) {
 
 	v := []byte("This is a test")
 	u.StoreFile("file1", v)
-	
+
 	var v2 []byte
 	var magic_string string
 

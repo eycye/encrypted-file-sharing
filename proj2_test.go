@@ -35,6 +35,13 @@ func TestInit(t *testing.T) {
 		return
 	}
 
+	bob, err := InitUser("bob", "fubar")
+	if bob == nil || err != nil {
+		// t.Error says the test fails
+		t.Error("Failed to initialize user", err)
+		return
+	}
+
 	alice2, err := GetUser("alice", "fubar")
 	if alice2 == nil || err != nil {
 		// t.Error says the test fails
@@ -49,7 +56,7 @@ func TestInit(t *testing.T) {
 	}
 
 	for _, val := range userlib.DatastoreGetMap() {
-		if strings.Contains("alice", string(val)) {
+		if strings.Contains("alice", string(val)) || strings.Contains("bob", string(val) {
 			t.Error("Username not encoded")
 			return
 		}
@@ -67,6 +74,68 @@ func TestInit(t *testing.T) {
 		// t.Error says the test fails
 		t.Error("User should not exist", err)
 		return
+	}
+
+	clear()
+	rjh, err := InitUser("rjh", "nk")
+	if rjh == nil || err != nil {
+		// t.Error says the test fails
+		t.Error("Failed to initialize user", err)
+		return
+	}
+
+	seri, err := InitUser("seri", "sk")
+	if seri == nil || err != nil {
+		// t.Error says the test fails
+		t.Error("Failed to initialize user", err)
+		return
+	}
+
+	var keys []userlib.UUID
+	for key, _ := range datastore {
+		keys = append(keys, key)
+	}
+	for i := 0; i < len(keys); i++ {
+		datastore[keys[i]] = userlib.RandomBytes(len(keys[i]))
+	}
+
+	_, err := GetUser("rjh", "fubar")
+	_, err2 := GetUser("seri", "fubar")
+
+	if err == nil || err2 == nil {
+		t.Error("Datastore was corrupted but got users")
+	}
+
+	clear()
+	dan, err := InitUser("dan", "seo")
+	if rjh == nil || err != nil {
+		// t.Error says the test fails
+		t.Error("Failed to initialize user", err)
+		return
+	}
+
+	alberto, err := InitUser("alberto", "gu")
+	if seri == nil || err != nil {
+		// t.Error says the test fails
+		t.Error("Failed to initialize user", err)
+		return
+	}
+
+	var keys []userlib.UUID
+	for key, _ := range datastore {
+		keys = append(keys, key)
+	}
+
+	replace := []byte{'c', 'l', 'o', 'y'}
+	for i := 0; i < len(keys)-1; i++ {
+		userlib.DataStoreSet(keys[i], replace)
+	}
+
+	_, err := GetUser("dan", "fubar")
+	_, err2 := GetUser("alberto", "fubar")
+
+	if err == nil || err2 == nil {
+		t.Error("Datastore was corrupted but got users")
 	}
 
 	// t.Log() only produces output if you run with "go test -v"

@@ -146,21 +146,50 @@ func TestInit(t *testing.T) {
 }
 
 func TestStorage(t *testing.T) {
+	userlib.SetDebugStatus(false)
 	clear()
+
+	x, err := InitUser("bob", "fubar")
 	u, err := InitUser("alice", "fubar")
+	y, err := InitUser("Charley", "fubar")
+
 	if err != nil {
 		t.Error("Failed to initialize user", err)
 		return
 	}
 
+	files := []string{"f_a", "f_b", "f_c"}
+	users := []string{"user1", "user2", "user3"}
+
 	v := []byte("This is a test")
 	u.StoreFile("file1", v)
-
 	v2, err2 := u.LoadFile("file1")
-	if err2 != nil {
+	y.StoreFile("file2", v)
+	v4, err4 := y.LoadFile("file1")
+	if err4 == nil {
+		t.Error("Charley did not save file under the name file1 so she should not be able to access the file"), err4
+		return
+	}.
+	v5, err5 := y.LoadFile("file2")
+	if err5 != nil {
 		t.Error("Failed to upload and download", err2)
 		return
 	}
+	if err2 !=  nil {
+		t.Error("Failed to upload and download", err2)
+		return
+	}
+	v3, err3 := v.LoadFile("file1")
+	if err3 != nil {
+		t.Error("User Bob should not be able to load the file because he is not the owner.",err3)
+		return
+	}
+
+	if !reflect.DeepEqual(v, v2) {
+		t.Error("Downloaded file is not the same", v, v2)
+		return
+	}
+	
 	if !reflect.DeepEqual(v, v2) {
 		t.Error("Downloaded file is not the same", v, v2)
 		return

@@ -145,13 +145,14 @@ func GettingData(UUID *uuid.UUID, EncK *[]byte, HMACK *[]byte) (data []byte, err
 		return
 	}
 
-	combinedEnc := make([]byte, 16 + 64)
+	// combinedEnc := make([]byte, 16 + 64)
+	combinedEnc := make([]byte, 64)
 	err = json.Unmarshal(jsonEncryption, &combinedEnc)
 	if err!= nil {
 		return
 	}
-	encryption := combinedEnc[:16]
-	givenHmacd := combinedEnc[16:]
+	encryption := combinedEnc[:32] // ciphertext; encryption := userlib.SymEnc(*EncK, IV, *jsonData)
+	givenHmacd := combinedEnc[32:]
 	hmacd, err := userlib.HMACEval(*HMACK, encryption)
 	if !userlib.HMACEqual(hmacd, givenHmacd) {
 		err = errors.New("Integrity/Authenticity violated")
@@ -314,13 +315,14 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 		err = errors.New("UUID not found in keystore")
 		return
 	}
+	//uuidcf, cfenk and cfhmack, 16 + 16 + 16
 	combined := make([]byte, 48)
 	err = json.Unmarshal(jsonEncryption, &combined)
 	if err!= nil {
 		return
 	}
 	UUIDCF := bytesToUUID(combined[:16])
-	CFEncK := []byte(combined[16:31])
+	CFEncK := []byte(combined[16:32])
 	CFHMACK := []byte(combined[32:])
 
 	var file File
@@ -380,7 +382,7 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 		return
 	}
 	UUIDCF := bytesToUUID(combined[:16])
-	CFEncK := []byte(combined[16:31])
+	CFEncK := []byte(combined[16:32])
 	CFHMACK := []byte(combined[32:])
 
  	compfileBytes, err := GettingData(&UUIDCF, &CFEncK, &CFHMACK)
@@ -444,7 +446,7 @@ func (userdata *User) ShareFile(filename string, recipient string) (magic_string
 			return
 		}
 		UUIDCF := bytesToUUID(combined[:16])
-		CFEncK := []byte(combined[16:31])
+		CFEncK := []byte(combined[16:32])
 		CFHMACK := []byte(combined[32:])
 
 		// var compfile CompFile
@@ -579,8 +581,8 @@ func (userdata *User) RevokeFile(filename string, target_username string) (err e
 		return
 	}
 	UUIDCF := bytesToUUID(combined[:16])
-	CFEncK := []byte(combined[16:16+userlib.AESKeySize-1])
-	CFHMACK := []byte(combined[16+userlib.AESKeySize:])
+	CFEncK := []byte(combined[16:32])
+	CFHMACK := []byte(combined[32:])
 	compfileBytes, err := GettingData(&UUIDCF, &CFEncK, &CFHMACK)
 	var compfile CompFile
 	err = json.Unmarshal(compfileBytes, &compfile)

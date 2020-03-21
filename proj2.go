@@ -138,7 +138,7 @@ func StoringData(UUID *uuid.UUID, EncK *[]byte, HMACK *[]byte, jsonData *[]byte)
 	return
 }
 
-func GettingData(UUID *uuid.UUID, EncK *[]byte, HMACK *[]byte) (data *[]byte, err error) {
+func GettingData(UUID *uuid.UUID, EncK *[]byte, HMACK *[]byte) (data []byte, err error) {
 	jsonEncryption, ok := userlib.DatastoreGet(*UUID)
 	if !ok {
 		err = errors.New("UUID not found in keystore")
@@ -156,7 +156,7 @@ func GettingData(UUID *uuid.UUID, EncK *[]byte, HMACK *[]byte) (data *[]byte, er
 	if !userlib.HMACEqual(hmacd, givenHmacd) {
 		err = errors.New("Integrity/Authenticity violated")
 	}
-	*data = userlib.SymDec(*EncK, encryption)
+	data = userlib.SymDec(*EncK, encryption)
 	return
 }
 
@@ -187,7 +187,7 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	userdata.Location = make(map[string]uuid.UUID)
 
 	concatKeys := userlib.Argon2Key([]byte(password), []byte(username), 32) // UEncK || HMACKey
-	userdata.UEncK = concatKeys[:16
+	userdata.UEncK = concatKeys[:16]
 	userdata.HMACKey = concatKeys[16:]
 	genUUID, _ := userlib.HMACEval(userdata.HMACKey, []byte(username))
 	userdata.UUID, _ = uuid.FromBytes(genUUID[:16]) // UUID 16 bytes
@@ -219,12 +219,12 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 	userdata.UUID, _ = uuid.FromBytes(genUUID[:16]) // UUID 16 bytes
 
 	byteUserdata, err := GettingData(&userdata.UUID, &userdata.UEncK, &userdata.HMACKey)
-	err = json.Unmarshal(*byteUserdata, userdataptr)
+	if err != nil || byteUserdata == nil {
+		err = errors.New("Can't login")
+	}
+	err = json.Unmarshal(byteUserdata, userdataptr)
 	if err != nil {
-		if err.Error() == "UUID not found in keystore" {
-			err = errors.New("incorrect login credentials")
-		}
-		return
+		err = errors.New("Can't login")
 	}
 	return
 }
@@ -333,7 +333,7 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	var index int
  	compfileBytes, err := GettingData(&UUIDCF, &CFEncK, &CFHMACK)
 	var compfile CompFile
-	err = json.Unmarshal(*compfileBytes, &compfile)
+	err = json.Unmarshal(compfileBytes, &compfile)
 	if err!= nil {
 		return
 	}
@@ -385,7 +385,7 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 
  	compfileBytes, err := GettingData(&UUIDCF, &CFEncK, &CFHMACK)
 	var compfile CompFile
-	err = json.Unmarshal(*compfileBytes, &compfile)
+	err = json.Unmarshal(compfileBytes, &compfile)
 	//TODO: This is a toy implementation.
 	// UUID, _ := uuid.FromBytes([]byte(filename + userdata.Username)[:16])
 	// packaged_data, ok := userlib.DatastoreGet(UUID)
@@ -402,7 +402,7 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 		FHMACK, _ := compfile.FilesHMACK[i]
 		fileBytes, _ := GettingData(&UUIDF, &FEncK, &FHMACK)
 		var file File
-		err = json.Unmarshal(*fileBytes, &file)
+		err = json.Unmarshal(fileBytes, &file)
 		if err!= nil {
 			break
 		}
@@ -450,7 +450,7 @@ func (userdata *User) ShareFile(filename string, recipient string) (magic_string
 		// var compfile CompFile
 	 	compfileBytes, err := GettingData(&UUIDCF, &CFEncK, &CFHMACK)
 		var compfile CompFile
-		err = json.Unmarshal(*compfileBytes, &compfile)
+		err = json.Unmarshal(compfileBytes, &compfile)
 		if err != nil {
 			err = errors.New("file not found")
 			return
@@ -583,7 +583,7 @@ func (userdata *User) RevokeFile(filename string, target_username string) (err e
 	CFHMACK := []byte(combined[16+userlib.AESKeySize:])
 	compfileBytes, err := GettingData(&UUIDCF, &CFEncK, &CFHMACK)
 	var compfile CompFile
-	err = json.Unmarshal(*compfileBytes, &compfile)
+	err = json.Unmarshal(compfileBytes, &compfile)
 	if err != nil {
 		err = errors.New("file not found")
 		return

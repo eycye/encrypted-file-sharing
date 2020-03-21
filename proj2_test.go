@@ -127,7 +127,7 @@ func TestInit(t *testing.T) {
 	}
 
 	replace := []byte{'c', 'l', 'o', 'y'}
-	for i := 0; i < len(keys)-1; i++ {
+	for i := 0; i < len(keys) - 1; i++ {
 		userlib.DataStoreSet(keys[i], replace)
 	}
 
@@ -149,49 +149,34 @@ func TestStorage(t *testing.T) {
 	userlib.SetDebugStatus(false)
 	clear()
 
-	x, err := InitUser("bob", "fubar")
-	u, err := InitUser("alice", "fubar")
-	y, err := InitUser("Charley", "fubar")
+	alice, err := InitUser("alice", "fubar")
+	bob, err := InitUser("bob", "fubar")
+	charley, err := InitUser("charley", "fubar")
 
 	if err != nil {
 		t.Error("Failed to initialize user", err)
 		return
 	}
 
-	files := []string{"f_a", "f_b", "f_c"}
-	users := []string{"user1", "user2", "user3"}
-
-	v := []byte("This is a test")
-	u.StoreFile("file1", v)
-	v2, err2 := u.LoadFile("file1")
-	y.StoreFile("file2", v)
-	v4, err4 := y.LoadFile("file1")
-	if err4 == nil {
-		t.Error("Charley did not save file under the name file1 so she should not be able to access the file"), err4
-		return
-	}.
-	v5, err5 := y.LoadFile("file2")
-	if err5 != nil {
-		t.Error("Failed to upload and download", err2)
-		return
-	}
-	if err2 !=  nil {
-		t.Error("Failed to upload and download", err2)
-		return
-	}
-	v3, err3 := v.LoadFile("file1")
-	if err3 != nil {
-		t.Error("User Bob should not be able to load the file because he is not the owner.",err3)
+	data1 := []byte("This is a test")
+	alice.StoreFile("file1", data1)
+	notFile1, err1 := charley.LoadFile("file1")
+	if err1 == nil || reflect.DeepEqual(data1, notFile1) {
+		t.Error("Charley should not have access to a file that alice saved", err1)
 		return
 	}
 
-	if !reflect.DeepEqual(v, v2) {
-		t.Error("Downloaded file is not the same", v, v2)
+	data2 := []bytes("This is another test")
+	charley.StoreFile("file2", data2)
+	data2Get, err2 := charley.LoadFile("file2")
+	if err2 != nil || !reflect.DeepEqual(data2, data2Get) {
+		t.Error("Failed to upload and download", err2)
 		return
 	}
-	
-	if !reflect.DeepEqual(v, v2) {
-		t.Error("Downloaded file is not the same", v, v2)
+
+	notFile1Again, err3 := bob.LoadFile("file1")
+	if err3 != nil || reflect.DeepEqual(data1, notFile1Again) {
+		t.Error("Bob should not be able to load the file because he is not the owner", err3)
 		return
 	}
 }
@@ -206,7 +191,7 @@ func TestInvalidFile(t *testing.T) {
 
 	_, err2 := u.LoadFile("this file does not exist")
 	if err2 == nil {
-		t.Error("Downloaded a ninexistent file", err2)
+		t.Error("Downloaded a nonexistent file", err2)
 		return
 	}
 }

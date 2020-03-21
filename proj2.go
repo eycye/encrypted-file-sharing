@@ -484,9 +484,11 @@ func (userdata *User) ShareFile(filename string, recipient string) (magic_string
 		msg := UUIDreceive
 
 		encryptKey, ok := userlib.KeystoreGet(recipient + "_enck")
-		encmsg := userlib.SymEnc(encryptKey, IV, msg[:]) // SymEnc(key []byte, iv []byte, plaintext []byte) ([]byte)
+		//encmsg := userlib.SymEnc(encryptKey, IV, msg[:]) // SymEnc(key []byte, iv []byte, plaintext []byte) ([]byte)
+		encmsg, err := userlib.PKEEnc(encryptKey, msg[:])
 		signed, err := userlib.DSSign(userdata.SignK, msg[:])
-		encsign := userlib.SymEnc(encryptKey, IV, signed)
+		//encsign := userlib.SymEnc(encryptKey, IV, signed)
+		encsign, err := userlib.PKEEnc(encryptKey, msg[:])
 		//encrypt the signature and append it to encmsg
 		combined = append(encmsg, encsign...)
 		magic_string_Bytes, _ := json.Marshal(combined)
@@ -519,7 +521,8 @@ func appendByIdDFS(node *Node, jsonEncryption []byte) {
 	}
 	if len(node.Children) > 0 {
 		for _, child := range node.Children {
-			findByIdDFS(*child, jsonEncryption)
+			appendByIdDFS(*child, jsonEncryption)
+			//findByIdDFS(*child, jsonEncryption)
 		}
 	}
 }
@@ -534,8 +537,10 @@ func (userdata *User) ReceiveFile(filename string, sender string, magic_string s
 	if err!= nil {
 		return
 	}
-	msg := userlib.SymDec(userdata.PrivateK, magic_string_Bytes[:len(magic_string) / 2]) // []byte of UUIDreceive
-	signed := userlib.SymDec(userdata.PrivateK, magic_string_Bytes[len(magic_string) / 2:])
+	//msg := userlib.SymDec(userdata.PrivateK, magic_string_Bytes[:len(magic_string) / 2]) // []byte of UUIDreceive
+	msg, err:= userlib.PKEDec(userdata.PrivateK, magic_string_Bytes[:len(magic_string) / 2]) // []byte of UUIDreceive
+	//signed := userlib.SymDec(userdata.PrivateK, magic_string_Bytes[len(magic_string) / 2:])
+	signed, err := userlib.PKEDec(userdata.PrivateK, magic_string_Bytes[len(magic_string) / 2:])
 	senderVerifyK, ok := userlib.KeystoreGet(sender + "_vfyk")
 	if !ok {
 		return errors.New("sender doesn't exist")
@@ -593,9 +598,9 @@ func (userdata *User) RevokeFile(filename string, target_username string) (err e
 	}
 	currnode.Children = nil
 	currnode.Username = "Deleted"
-	IV := string(userlib.RandomBytes(userlib.AESBlockSize))
+	IV := userlib.RandomBytes(userlib.AESBlockSize)
 	compfile.UUIDCF = uuid.New()
-	concatFKeys = userlib.Argon2Key(IV, compfile.UUIDCF[:], uint32(userlib.AESKeySize * 2))
+	concatFKeys := userlib.Argon2Key(IV, compfile.UUIDCF[:], uint32(userlib.AESKeySize * 2))
 	compfile.CFEncK = concatFKeys[:userlib.AESKeySize]
 	compfile.CFHMACK = concatFKeys[userlib.AESKeySize:]
 

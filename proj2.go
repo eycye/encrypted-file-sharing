@@ -399,12 +399,15 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 	//End of toy implementation
 
 	for i := 0; i < compfile.Count; i++ {
-		UUIDF, ok := compfile.FilesUUID[i]
-		FEncK, ok := compfile.FilesFEncK[i]
-		FHMACK, ok := compfile.FilesHMACK[i]
-		fileBytes, err := GettingData(&UUIDF, &FEncK, &FHMACK)
+		UUIDF, _ := compfile.FilesUUID[i]
+		FEncK, _ := compfile.FilesFEncK[i]
+		FHMACK, _ := compfile.FilesHMACK[i]
+		fileBytes, _ := GettingData(&UUIDF, &FEncK, &FHMACK)
 		var file File
 		err = json.Unmarshal(*fileBytes, &file)
+		if err!= nil {
+			break
+		}
 		data = append(data, file.Data...)
 	}
 
@@ -479,7 +482,7 @@ func (userdata *User) ShareFile(filename string, recipient string) (magic_string
 		}
 
 		// access_token: append UUIDreceive to the end, sign the msg, then enc with receiver's publickey
-		IV := userlib.RandomBytes(userlib.AESBlockSize)
+		// IV := userlib.RandomBytes(userlib.AESBlockSize)
 
 		msg := UUIDreceive
 
@@ -488,7 +491,7 @@ func (userdata *User) ShareFile(filename string, recipient string) (magic_string
 		encmsg, err := userlib.PKEEnc(encryptKey, msg[:])
 		signed, err := userlib.DSSign(userdata.SignK, msg[:])
 		//encsign := userlib.SymEnc(encryptKey, IV, signed)
-		encsign, err := userlib.PKEEnc(encryptKey, msg[:])
+		encsign, err := userlib.PKEEnc(encryptKey, signed[:])
 		//encrypt the signature and append it to encmsg
 		combined = append(encmsg, encsign...)
 		magic_string_Bytes, _ := json.Marshal(combined)
@@ -504,24 +507,28 @@ func findByIdDFS(node Node, username string)(ret Node, err error) {
 	if len(node.Children) > 0 {
 		for _, child := range node.Children {
 			found, err := findByIdDFS(*child, username)
+			if err != nil {
+				err = errors.New("file not found")
+				continue
+			}
 			if found.Username == username {
 				ret = found
-				return
+				err = nil
+				break
 			}
 		}
 	}
-	err = errors.New("lol")
 	return
 }
 
 func appendByIdDFS(node *Node, jsonEncryption []byte) {
 	if node.Username != "Deleted" {
 		UUIDreceive := node.UUIDreceive
-		userlib.DatastoreSet(*UUIDreceive, jsonEncryption)
+		userlib.DatastoreSet(UUIDreceive, jsonEncryption)
 	}
 	if len(node.Children) > 0 {
 		for _, child := range node.Children {
-			appendByIdDFS(*child, jsonEncryption)
+			appendByIdDFS(child, jsonEncryption)
 			//findByIdDFS(*child, jsonEncryption)
 		}
 	}
@@ -607,8 +614,8 @@ func (userdata *User) RevokeFile(filename string, target_username string) (err e
 	stringCFEncK := string(compfile.CFEncK)
 	stringCFHMACK := string(compfile.CFHMACK)
 	CF_Data := compfile.UUIDCF.String() + stringCFEncK + stringCFHMACK
-	jsonEncryptionupdated, err := json.Marshal(*CF_Data)
-	appendByIdDFS(record, jsonEncryptionupdated)
+	jsonEncryptionupdated, err := json.Marshal([]byte(CF_Data))
+	appendByIdDFS(&record, jsonEncryptionupdated)
 
 	err = StoringData(&compfile.UUIDCF, &compfile.CFEncK, &compfile.CFHMACK, &jsonEncryptionupdated)
 	if err != nil {

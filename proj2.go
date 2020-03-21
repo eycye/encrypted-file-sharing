@@ -144,7 +144,8 @@ func GettingData(UUID *uuid.UUID, EncK *[]byte, HMACK *[]byte) (data *[]byte, er
 		err = errors.New("UUID not found in keystore")
 		return
 	}
-	var combinedEnc [16 + 64]byte
+
+	combinedEnc := make([]byte, 16 + 64)
 	err = json.Unmarshal(jsonEncryption, &combinedEnc)
 	if err!= nil {
 		return
@@ -529,12 +530,12 @@ func appendByIdDFS(node *Node, jsonEncryption []byte) {
 // it is authentically from the sender.
 func (userdata *User) ReceiveFile(filename string, sender string, magic_string string) (err error) {
 	var magic_string_Bytes []byte
-	err := json.Unmarshal([]byte(magic_string), &magic_string_Bytes)
+	err = json.Unmarshal([]byte(magic_string), &magic_string_Bytes)
 	if err!= nil {
 		return
 	}
-	msg := SymDec(userdata.PrivateK, magic_string_Bytes[:len(magic_string) / 2]) // []byte of UUIDreceive
-	signed := SymDec(userdata.PrivateK, magic_string_Bytes[len(magic_string) / 2:])
+	msg := userlib.SymDec(userdata.PrivateK, magic_string_Bytes[:len(magic_string) / 2]) // []byte of UUIDreceive
+	signed := userlib.SymDec(userdata.PrivateK, magic_string_Bytes[len(magic_string) / 2:])
 	senderVerifyK, ok := userlib.KeystoreGet(sender + "_vfyk")
 	if !ok {
 		return errors.New("sender doesn't exist")
@@ -557,12 +558,14 @@ func (userdata *User) RevokeFile(filename string, target_username string) (err e
 		return
 	}
 	//getting the compfile from datastore
-	jsonEncryption, ok := userlib.DatastoreGet(*UUID)
+	jsonEncryption, ok := userlib.DatastoreGet(UUIDtemp)
 	if !ok {
 		err = errors.New("UUID not found in keystore")
 		return
 	}
-	var combined [16 + userlib.AESKeySize * 2]byte
+
+	DataSize := 16 + userlib.AESKeySize * 2
+	combined := make([]byte, DataSize)
 	err = json.Unmarshal(jsonEncryption, &combined)
 	if err!= nil {
 		return

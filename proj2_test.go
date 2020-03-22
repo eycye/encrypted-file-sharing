@@ -52,7 +52,7 @@ func TestInit(t *testing.T) {
 	aliceBytes, _ := json.Marshal(alice)
 	alice2Bytes, _ := json.Marshal(alice2)
 	if !reflect.DeepEqual(aliceBytes, alice2Bytes) {
-		t.Error("InitUser and GetUser didn't obtain same user")
+		t.Error("InitUser and GetUser didn't obtain same user", aliceBytes, alice2Bytes)
 	}
 
 	for _, val := range userlib.DatastoreGetMap() {
@@ -161,25 +161,38 @@ func TestStorage(t *testing.T) {
 	data1 := []byte("This is a test")
 	alice.StoreFile("file1", data1)
 	notFile1, err1 := charley.LoadFile("file1")
-	if err1 == nil || reflect.DeepEqual(data1, notFile1) {
+	if err1 == nil {
 		t.Error("Charley should not have access to a file that alice saved", err1)
+		return
+	}
+	if reflect.DeepEqual(data1, notFile1) {
+		t.Error("Charley should not have access to a file that alice saved", data1, notFile1)
 		return
 	}
 
 	data2 := []bytes("This is another test")
 	charley.StoreFile("file2", data2)
 	data2Get, err2 := charley.LoadFile("file2")
-	if err2 != nil || !reflect.DeepEqual(data2, data2Get) {
+	if err2 != nil {
 		t.Error("Failed to upload and download", err2)
+		return
+	}
+	if !reflect.DeepEqual(data2, data2Get) {
+		t.Error("Failed to upload and download", data2, data2Get)
 		return
 	}
 
 	notFile1Again, err3 := bob.LoadFile("file1")
-	if err3 != nil || reflect.DeepEqual(data1, notFile1Again) {
+	if err3 != nil {
 		t.Error("Bob should not be able to load the file because he is not the owner", err3)
 		return
 	}
+	if reflect.DeepEqual(data1, notFile1Again) {
+		t.Error("Bob should not be able to load the file because he is not the owner", data1, notFile1Again)
+		return
+	}
 }
+
 
 func TestInvalidFile(t *testing.T) {
 	clear()
@@ -197,50 +210,130 @@ func TestInvalidFile(t *testing.T) {
 }
 
 
-func TestShare(t *testing.T) {
+func TestShareandRevoke(t *testing.T) {
 	clear()
-	u, err := InitUser("alice", "fubar")
+	alice, err := InitUser("alice", "fubar")
+	charley, err := InitUser("charley", "fuubar")
+	david, err := InitUser("david", "fuuubar")
+	eve, err := InitUser("eve", "fuuuubar")
+	frank, err := InitUser("frank", "fuuuuubar")
 	if err != nil {
 		t.Error("Failed to initialize user", err)
 		return
 	}
-	u2, err2 := InitUser("bob", "foobar")
+	bob, err2 := InitUser("bob", "foobar")
 	if err2 != nil {
 		t.Error("Failed to initialize bob", err2)
 		return
 	}
 
-	v := []byte("This is a test")
-	u.StoreFile("file1", v)
+	test1 := []byte("This is a test")
+	alice.StoreFile("file1", test1)
 
-	var v2 []byte
+	var test2 []byte
 	var magic_string string
 
-	v, err = u.LoadFile("file1")
+	test1, err = alice.LoadFile("file1")
 	if err != nil {
 		t.Error("Failed to download the file from alice", err)
 		return
 	}
 
-	magic_string, err = u.ShareFile("file1", "bob")
+	magic_string, err = alice.ShareFile("file1", "bob")
 	if err != nil {
 		t.Error("Failed to share the a file", err)
 		return
 	}
-	err = u2.ReceiveFile("file2", "alice", magic_string)
+	err = bob.ReceiveFile("file2", "alice", magic_string)
 	if err != nil {
 		t.Error("Failed to receive the share message", err)
 		return
 	}
-
-	v2, err = u2.LoadFile("file2")
+	err = charley.ReceiveFile("file3", "alice", magic_string)
+	if err == nil {
+		t.Error("C should not be able to load the file since it was not sent to her", err)
+		return
+	}
+	test2, err = bob.LoadFile("file2")
 	if err != nil {
 		t.Error("Failed to download the file after sharing", err)
 		return
 	}
-	if !reflect.DeepEqual(v, v2) {
-		t.Error("Shared file is not the same", v, v2)
+	if !reflect.DeepEqual(test1, test2) {
+		t.Error("Shared file is not the same", test1, test2)
 		return
 	}
+	var magic_string2 string
+	magic_string2, err = bob.ShareFile("file1", "david")
+	if err == nil {
+		t.Error("The name of Bob's file should be file2, but not file1", err)
+		return
+	}
+	magic_string2, err = bob.ShareFile("file2", "david")
+	if err != nil {
+		t.Error("Bob should be able to share the file since he has access to it", err)
+		return
+	}
+	err = david.ReceiveFile("file4", "bob", magic_string2)
+	if err != nil {
+		t.Error("David failed to receive the file sent from Bob", err)
+		return
+	}
+	test3, err = david.LoadFile("file2")
+	if err != nil {
+		t.Error("Failed to download the file after sharing", err)
+		return
+	}
+	if !reflect.DeepEqual(test1, test3) {
+		t.Error("Shared file is not the same, non direct child's file should be the same as owner's.", test1, test3)
+		return
+	}
+	// revoke testing: alice shares with bob, bob shares with david, alice shares with frank, frank shares with eve
+	// alice can only revoke the files she owned, with the name she chose
+	// revoke bob's access, neither bob nor david has access
+	// revoke eve's access, frank should still have access, and eve should not
+	magic_string3, err =  alice.ShareFile("file1", "frank")
+	frank.ReceiveFile("frankfile", "alice", magic_string3)
+	magic_string4, err =  frank.ShareFile("file1", "eve")
+	eve.ReceiveFile("evefile", "frank", magic_string4)
+	err = alice.RevokeFile("file2", "bob")
+	if err == nil {
+		t.Error("alice should only be able to revoke the file based on how she named it", err)
+		return
+	}
+	err = alice.RevokeFile("file1", "bob")
+	if err != nil {
+		t.Error("alice should be able to revoke the file since she is the owner", err)
+		return
+	}
+	test2, err = bob.LoadFile("file2")
+	if err == nil {
+			t.Error("Bob should not have access anymore", err)
+			return
+	}
+	test4, err = david.LoadFile("file4")
+	if err == nil {
+			t.Error("David should not have access anymore", err)
+			return
+	}
+	err = alice.RevokeFile("file1", "eve")
+	test5, err = eve.LoadFile("evefile")
+	if err == nil {
+			t.Error("Alice should be able to revoke a non direct child's access", err)
+			return
+	}
+	test6, err = frank.LoadFile("frankfile")
+	if err != nil {
+			t.Error("Frank should still have access since only eve's access is revoked", err)
+			return
+	}
+}
 
+
+func TestAppend(t *testing.T) {
+	userlib.SetDebugStatus(false)
+	clear()
+
+	files := []string{"alexander", "aaron", "eliza"}
+	users := []string{"hamilton", "burr", "schuyler"}
 }

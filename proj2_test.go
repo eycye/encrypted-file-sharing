@@ -329,11 +329,72 @@ func TestShareandRevoke(t *testing.T) {
 	}
 }
 
+func corruptDataStore(t *testing.T){
+	clear()
+	test1 := []byte("This is a test")
+	alice, err := InitUser("alice", "fubar")
+	alice.StoreFile("file1", test1)
+
+	datastore := userlib.DatastoreGetMap()
+	for key, _ := range datastore{
+		if datastore[key] == test1 {
+			datastore[key] = "The file is now modified"
+		}
+	}
+	test2, err = alice.LoadFile("file1")
+	if err == nil {
+		t.Error("Alice should be notified that the file has been modified and thus not be able to retrieve the file", err)
+		return
+	}
+	if reflect.DeepEqual(test1, test2) {
+		t.Error("The file should not be the same", test1, test2)
+		return
+	}
+}
+
 
 func TestAppend(t *testing.T) {
 	userlib.SetDebugStatus(false)
 	clear()
 
-	files := []string{"alexander", "aaron", "eliza"}
-	users := []string{"hamilton", "burr", "schuyler"}
+	alex, err := InitUser("alex", "fubar")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	aaron, err := InitUser("aaron", "fubar")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	file := userlib.RandomBytes(userlib.AESBlockSize + 16)
+	file2 := userlib.RandomBytes(userlib.AESBlockSize + 32)
+	additional := userlib.RandomBytes(userlib.AESBlockSize + 8)
+
+	user.StoreFile("hamilton", file)
+	user.StoreFile("burr", file2)
+	err1 := alex.AppendFile("hamilton", additional)
+	if err1 != nil {
+		t.Error("Append failed", err)
+		return
+	}
+
+	err2 := alex.AppendFile("burr", additional)
+	if err2 == nil {
+		t.Error("Alex should not have access to Aaron's file", err2)
+		return
+	}
+
+	loading, err3 := alex.LoadFile("hamilton")
+	if err != nil {
+		t.Error("Load appended file failed", err)
+		return
+	}
+	expectedAppend := append(file, additional...)
+	if !reflect.DeepEqual(expectedAppend, loading) {
+		t.Error("Loaded content should be the same as expected", err)
+		return
+	}
 }

@@ -115,13 +115,23 @@ type CompFile struct {
 	FilesUUID map[int]uuid.UUID
 	FilesFEncK map[int][]byte
 	FilesHMACK map[int][]byte
-	Record Node
+	Record *Node
  }
 
 type Node struct {
  Children []*Node
  UUIDreceive uuid.UUID
  Username string
+}
+
+type Secret struct {
+	Encryption []byte
+	HMAC []byte
+}
+
+type SecretKeys struct {
+	Signed []byte
+	Enc []byte
 }
 
 // encrypts data/struct and add to Datastore
@@ -132,8 +142,11 @@ func StoringData(UUID *uuid.UUID, EncK *[]byte, HMACK *[]byte, jsonData *[]byte)
 	if err != nil {
 		return
 	}
-	combinedEnc := append(encryption, hmacd...)
-	jsonEncryption, err := json.Marshal(combinedEnc)
+	// combinedEnc := append(encryption, hmacd...)
+	var secretive Secret
+	secretive.Encryption = encryption
+	secretive.HMAC = hmacd
+	jsonEncryption, err := json.Marshal(secretive)
 	userlib.DatastoreSet(*UUID, jsonEncryption)
 	return
 }
@@ -145,14 +158,14 @@ func GettingData(UUID *uuid.UUID, EncK *[]byte, HMACK *[]byte) (data []byte, err
 		return
 	}
 
-	// combinedEnc := make([]byte, 16 + 64)
-	combinedEnc := make([]byte, 64)
-	err = json.Unmarshal(jsonEncryption, &combinedEnc)
+	// combinedEnc := make([]byte, 64)
+	var secretive Secret
+	err = json.Unmarshal(jsonEncryption, &secretive)
 	if err!= nil {
 		return
 	}
-	encryption := combinedEnc[:32] // ciphertext; encryption := userlib.SymEnc(*EncK, IV, *jsonData)
-	givenHmacd := combinedEnc[32:]
+	encryption := secretive.Encryption // ciphertext; encryption := userlib.SymEnc(*EncK, IV, *jsonData)
+	givenHmacd := secretive.HMAC
 	hmacd, err := userlib.HMACEval(*HMACK, encryption)
 	if !userlib.HMACEqual(hmacd, givenHmacd) {
 		err = errors.New("Integrity/Authenticity violated")
@@ -265,9 +278,8 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 
 	// DataSize := 16 + userlib.AESKeySize * 2
 	// CF_Data := make([]byte, DataSize)
-	stringCFEncK := string(compfile.CFEncK)
-	stringCFHMACK := string(compfile.CFHMACK)
-	CF_Data := compfile.UUIDCF.String() + stringCFEncK + stringCFHMACK
+	CF_Data := append(compfile.UUIDCF[:], compfile.CFEncK...)
+	CF_Data = append(CF_Data, compfile.CFHMACK...)
 	jsonEncryption, err := json.Marshal(CF_Data)
 	userlib.DatastoreSet(UUIDtemp, jsonEncryption)
 	var node Node
@@ -275,7 +287,7 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 	node.UUIDreceive = userdata.UUID
 	var chdn []*Node
 	node.Children = chdn
-	compfile.Record = node
+	compfile.Record = &node
 
 	// encrypt file & compfile
 	jsonFiledata, _ := json.Marshal(file)
@@ -329,6 +341,7 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	file.Data = data
 	IV := userlib.RandomBytes(userlib.AESBlockSize)
 	concatFKeys := userlib.Argon2Key(IV, file.UUIDF[:], 32)
+	//file.uuidf[:] []bytes(file.UUIDF.String())
 	file.FEncK = concatFKeys[:16]
 	file.FHMACK = concatFKeys[16:]
 	file.UUIDF = uuid.New()
@@ -439,7 +452,7 @@ func (userdata *User) ShareFile(filename string, recipient string) (magic_string
 		}
 		UUIDreceive := uuid.New()
 		userlib.DatastoreSet(UUIDreceive, jsonEncryption)
-
+		//The following lines are for updating record
 		combined := make([]byte, 48)
 		err = json.Unmarshal(jsonEncryption, &combined)
 		if err!= nil {
@@ -448,7 +461,6 @@ func (userdata *User) ShareFile(filename string, recipient string) (magic_string
 		UUIDCF := bytesToUUID(combined[:16])
 		CFEncK := []byte(combined[16:32])
 		CFHMACK := []byte(combined[32:])
-
 		// var compfile CompFile
 	 	compfileBytes, err := GettingData(&UUIDCF, &CFEncK, &CFHMACK)
 		var compfile CompFile
@@ -463,15 +475,12 @@ func (userdata *User) ShareFile(filename string, recipient string) (magic_string
 			err = errors.New("file not found")
 			return
 		}
-
 		var child Node
 		child.Username = recipient
 		child.UUIDreceive = UUIDreceive
 		var chdn []*Node
 		child.Children = chdn
-
 		currNode.Children = append(currNode.Children, &child)
-
 		// reencrypt compfile and store back in Datastore
 		jsonCFdata, _ := json.Marshal(compfile)
 		err = StoringData(&UUIDCF, &CFEncK, &CFHMACK, &jsonCFdata)
@@ -482,30 +491,28 @@ func (userdata *User) ShareFile(filename string, recipient string) (magic_string
 
 		// access_token: append UUIDreceive to the end, sign the msg, then enc with receiver's publickey
 		// IV := userlib.RandomBytes(userlib.AESBlockSize)
-
 		msg := UUIDreceive
-
 		encryptKey, ok := userlib.KeystoreGet(recipient + "_enck")
 		//encmsg := userlib.SymEnc(encryptKey, IV, msg[:]) // SymEnc(key []byte, iv []byte, plaintext []byte) ([]byte)
 		encmsg, err := userlib.PKEEnc(encryptKey, msg[:])
 		signed, err := userlib.DSSign(userdata.SignK, msg[:])
-		//encsign := userlib.SymEnc(encryptKey, IV, signed)
-		encsign, err := userlib.PKEEnc(encryptKey, signed[:])
 		//encrypt the signature and append it to encmsg
-		combined = append(encmsg, encsign...)
-		magic_string_Bytes, _ := json.Marshal(combined)
+		var secret SecretKeys
+		secret.Enc = encmsg
+		secret.Signed = signed
+		magic_string_Bytes, _ := json.Marshal(secret)
 		magic_string = string(magic_string_Bytes)
 		return
 }
 
-func findByIdDFS(node Node, username string)(ret Node, err error) {
+func findByIdDFS(node *Node, username string)(ret *Node, err error) {
 	if node.Username == username {
 		ret = node
 		return
 	}
 	if len(node.Children) > 0 {
 		for _, child := range node.Children {
-			found, err := findByIdDFS(*child, username)
+			found, err := findByIdDFS(child, username)
 			if err != nil {
 				err = errors.New("file not found")
 				continue
@@ -538,15 +545,15 @@ func appendByIdDFS(node *Node, jsonEncryption []byte) {
 // what the filename even is!  However, the recipient must ensure that
 // it is authentically from the sender.
 func (userdata *User) ReceiveFile(filename string, sender string, magic_string string) (err error) {
-	var magic_string_Bytes []byte
+	var magic_string_Bytes SecretKeys
 	err = json.Unmarshal([]byte(magic_string), &magic_string_Bytes)
 	if err!= nil {
 		return
 	}
 	//msg := userlib.SymDec(userdata.PrivateK, magic_string_Bytes[:len(magic_string) / 2]) // []byte of UUIDreceive
-	msg, err:= userlib.PKEDec(userdata.PrivateK, magic_string_Bytes[:len(magic_string) / 2]) // []byte of UUIDreceive
+	msg, err:= userlib.PKEDec(userdata.PrivateK, magic_string_Bytes.Enc) // []byte of UUIDreceive
 	//signed := userlib.SymDec(userdata.PrivateK, magic_string_Bytes[len(magic_string) / 2:])
-	signed, err := userlib.PKEDec(userdata.PrivateK, magic_string_Bytes[len(magic_string) / 2:])
+	signed := magic_string_Bytes.Signed
 	senderVerifyK, ok := userlib.KeystoreGet(sender + "_vfyk")
 	if !ok {
 		return errors.New("sender doesn't exist")
@@ -609,11 +616,10 @@ func (userdata *User) RevokeFile(filename string, target_username string) (err e
 	compfile.CFEncK = concatFKeys[:16]
 	compfile.CFHMACK = concatFKeys[16:]
 
-	stringCFEncK := string(compfile.CFEncK)
-	stringCFHMACK := string(compfile.CFHMACK)
-	CF_Data := compfile.UUIDCF.String() + stringCFEncK + stringCFHMACK
-	jsonEncryptionupdated, err := json.Marshal([]byte(CF_Data))
-	appendByIdDFS(&record, jsonEncryptionupdated)
+	CF_Data := append(compfile.UUIDCF[:], compfile.CFEncK...)
+	CF_Data = append(CF_Data, compfile.CFHMACK...)
+	jsonEncryptionupdated, err := json.Marshal(CF_Data)
+	appendByIdDFS(record, jsonEncryptionupdated)
 
 	err = StoringData(&compfile.UUIDCF, &compfile.CFEncK, &compfile.CFHMACK, &jsonEncryptionupdated)
 	if err != nil {

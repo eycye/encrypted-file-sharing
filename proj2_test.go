@@ -26,7 +26,7 @@ func TestInit(t *testing.T) {
 	t.Log("Initialization test")
 
 	// You can set this to false!
-	userlib.SetDebugStatus(false)
+	userlib.SetDebugStatus(true)
 
 	alice, err := InitUser("alice", "fubar")
 	if alice == nil || err != nil {
@@ -146,7 +146,7 @@ func TestInit(t *testing.T) {
 }
 
 func TestStorage(t *testing.T) {
-	userlib.SetDebugStatus(false)
+	userlib.SetDebugStatus(true)
 	clear()
 
 	alice, err := InitUser("alice", "fubar")
@@ -329,7 +329,7 @@ func TestShareandRevoke(t *testing.T) {
 	}
 }
 
-func corruptDataStore(t *testing.T){
+func TestCorruptDatastore(t *testing.T){
 	clear()
 	test1 := []byte("This is a test")
 	alice, err := InitUser("alice", "fubar")
@@ -354,7 +354,7 @@ func corruptDataStore(t *testing.T){
 
 
 func TestAppend(t *testing.T) {
-	userlib.SetDebugStatus(false)
+	userlib.SetDebugStatus(true)
 	clear()
 
 	alex, err := InitUser("alex", "fubar")

@@ -513,7 +513,7 @@ func findByIdDFS(node *Node, username string)(ret *Node, err error) {
 	if len(node.Children) > 0 {
 		for _, child := range node.Children {
 			found, err := findByIdDFS(child, username)
-			if err != nil {
+			if found == nil|| err != nil {
 				err = errors.New("file not found")
 				continue
 			}

@@ -121,6 +121,7 @@ func TestStorage(t *testing.T) {
 	}
 
 	v := []byte("This is a test")
+	bob_file := []byte("This is a different test")
 	u.StoreFile("pink", v)
 
 	v2, err00 := u.LoadFile("pink")
@@ -177,6 +178,15 @@ func TestStorage(t *testing.T) {
 		t.Error("Bob should not be able to load the file because he is not the owner", err5)
 		return
 	}
+
+	//testing Bob storing a different file with same name should not affect alice's file or equal to alice's file
+	bob.StoreFile("file1", bob_file)
+	notFile1Again, err6 := bob.LoadFile("file1")
+	if err6 != nil || reflect.DeepEqual(data1, notFile1Again) {
+		t.Error("Bob's file should not be the same anymore", err6)
+		return
+	}
+
 }
 
 
@@ -244,9 +254,6 @@ func TestShare(t *testing.T) {
 
 	test1 := []byte("This is Alice's test")
 	alice.StoreFile("file1", test1)
-
-	var test1get []byte
-	var magic_string string
 
 	test1get, err5 := alice.LoadFile("file1")
 	if err5 != nil {
@@ -364,22 +371,64 @@ func TestShare(t *testing.T) {
 			t.Error("David should not have access anymore", err17)
 			return
 	}
-	err17 = alice.RevokeFile("file1", "eve")
+	test2 := []byte("sss")
+	err22 := david.AppendFile("file4", test2)
+	if err22 == nil {
+		t.Error("David should not have access anymore", err22)
+		return
+	}
+	_, err20 := eve.LoadFile("evefile")
+	if err20 != nil {
+			t.Error("Eve failed to load", err20)
+			return
+	}
+	err17 = alice.RevokeFile("file1", "frank")
 	if err17 != nil {
 			t.Error("Revocation failed", err17)
 			return
 	}
-
-	_, err18 := eve.LoadFile("evefile")
+	_, err18 := frank.LoadFile("frankfile")
 	if err18 == nil {
-			t.Error("Eve's access should have been revoked by Alice", err18)
+			t.Error("frank's access should have been revoked by Alice", err18)
 			return
 	}
+	_, err21 := eve.LoadFile("evefile")
+	if err21 == nil {
+		t.Error("frank's access should have been revoked by Alice", err21)
+		return
+	}
 
-	_, err19 := frank.LoadFile("frankfile")
-	if err19 != nil {
-			t.Error("Frank should still have access since only Eve's access is revoked", err19)
-			return
+	test4 := []byte("This is another test by Alice")
+	alice.StoreFile("fileforcharley", test4)
+
+	magic_string5, err22 := alice.ShareFile("fileforcharley", "charley")
+	if err22 != nil {
+		t.Error("Sharing failed", err22)
+		return
+	}
+	err22 = charley.ReceiveFile("charleysfile", "alice", magic_string3)
+	if err22 == nil {
+		t.Error("Charley shouldn't be able to get Alice's shared file without the correct magic string", err22)
+		return
+	}
+	err22 = charley.ReceiveFile("charleysfile", "alice", magic_string5)
+	if err22 != nil {
+		t.Error("Receiving file failed", err22)
+		return
+	}
+
+	test5 := []byte("Alice's last test!!!!!")
+	alice.StoreFile("file2forcharley", test5)
+
+	magic_string6, err23 := alice.ShareFile("file2forcharley", "charley")
+	if err23 != nil {
+		t.Error("Sharing failed", err23)
+		return
+	}
+	err23 = charley.ReceiveFile("charleysfile", "alice", magic_string6)
+	if err23 == nil {
+		t.Error("Charley shouldn't be able to save two files unde the same name", err22)
+		return
 	}
 }
 
@@ -396,13 +445,15 @@ func TestAppend(t *testing.T) {
 		t.Error("Failed to initialize user", err1)
 		return
 	}
-
+	bob, _ := InitUser("bob", "fubar")
 	file := userlib.RandomBytes(userlib.AESBlockSize + 16)
 	file2 := userlib.RandomBytes(userlib.AESBlockSize + 32)
 	additional := userlib.RandomBytes(userlib.AESBlockSize + 8)
 
 	alex.StoreFile("hamilton", file)
 	aaron.StoreFile("burr", file2)
+	magic1, _ := alex.ShareFile("hamilton", "bob")
+	bob.ReceiveFile("bobfile", "alex", magic1)
 	err2 := alex.AppendFile("hamilton", additional)
 	if err2 != nil {
 		t.Error("Append failed", err2)
@@ -414,16 +465,18 @@ func TestAppend(t *testing.T) {
 		t.Error("Alex should not have access to Aaron's file", err2)
 		return
 	}
-
 	loading, err3 := alex.LoadFile("hamilton")
 	if err3 != nil {
 		t.Error("Load appended file failed", err3)
 		return
 	}
+	loading2, _ := bob.LoadFile("bobfile")
 
 	expectedAppend := append(file, additional...)
-	if !reflect.DeepEqual(expectedAppend, loading) {
+	if !reflect.DeepEqual(expectedAppend, loading) || !reflect.DeepEqual(expectedAppend, loading2){
 		t.Error("Loaded content should be the same as expected", expectedAppend, loading)
 		return
 	}
+
+
 }

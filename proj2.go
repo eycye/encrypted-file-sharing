@@ -397,20 +397,19 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 	UUIDCF := bytesToUUID(combined[:16])
 	CFEncK := []byte(combined[16:32])
 	CFHMACK := []byte(combined[32:])
-
+	_, errr := userlib.DatastoreGet(UUIDCF)
+	if !errr {
+		err = errors.New("File dont exist anymore, access revoked")
+		return
+	}
  	compfileBytes, err := GettingData(&UUIDCF, &CFEncK, &CFHMACK)
 	var compfile CompFile
 	err = json.Unmarshal(compfileBytes, &compfile)
-	//TODO: This is a toy implementation.
-	// UUID, _ := uuid.FromBytes([]byte(filename + userdata.Username)[:16])
-	// packaged_data, ok := userlib.DatastoreGet(UUID)
-	// if !ok {
-	// 	return nil, errors.New(strings.ToTitle("File not found!"))
-	// }
-	// json.Unmarshal(packaged_data, &data)
-	// // return data
-	//End of toy implementation
-
+	currNode, err2 := findByIdDFS(compfile.Record, userdata.Username)
+	if err2 != nil || currNode.Username == "Deleted" {
+		err = errors.New("you do not have access")
+		return
+	}
 	for i := 0; i < compfile.Count; i++ {
 		UUIDF, _ := compfile.FilesUUID[i]
 		FEncK, _ := compfile.FilesFEncK[i]
@@ -535,7 +534,6 @@ func appendByIdDFS(node *Node, jsonEncryption []byte) {
 	if len(node.Children) > 0 {
 		for _, child := range node.Children {
 			appendByIdDFS(child, jsonEncryption)
-			//findByIdDFS(*child, jsonEncryption)
 		}
 	}
 }
@@ -551,7 +549,7 @@ func (userdata *User) ReceiveFile(filename string, sender string, magic_string s
 		return
 	}
 	//msg := userlib.SymDec(userdata.PrivateK, magic_string_Bytes[:len(magic_string) / 2]) // []byte of UUIDreceive
-	msg, err:= userlib.PKEDec(userdata.PrivateK, magic_string_Bytes.Enc) // []byte of UUIDreceive
+	msg, err := userlib.PKEDec(userdata.PrivateK, magic_string_Bytes.Enc) // []byte of UUIDreceive
 	//signed := userlib.SymDec(userdata.PrivateK, magic_string_Bytes[len(magic_string) / 2:])
 	signed := magic_string_Bytes.Signed
 	senderVerifyK, ok := userlib.KeystoreGet(sender + "_vfyk")
@@ -563,6 +561,10 @@ func (userdata *User) ReceiveFile(filename string, sender string, magic_string s
 		return errors.New("verification failed for msg")
 	}
 	UUIDreceive := bytesToUUID(msg)
+	_, ok = userdata.Location[filename]
+	if ok {
+		return errors.New("use a different filename")
+	}
 	userdata.Location[filename] = UUIDreceive
 	return nil
 }
@@ -581,7 +583,6 @@ func (userdata *User) RevokeFile(filename string, target_username string) (err e
 		err = errors.New("UUID not found in keystore")
 		return
 	}
-
 	combined := make([]byte, 48)
 	err = json.Unmarshal(jsonEncryption, &combined)
 	if err!= nil {
@@ -597,7 +598,7 @@ func (userdata *User) RevokeFile(filename string, target_username string) (err e
 		err = errors.New("file not found")
 		return
 	}
-
+	userlib.DatastoreDelete(compfile.UUIDCF)
 	record := compfile.Record
 	// Only the owner can revoke someone's access
 	if userdata.UUID != record.UUIDreceive {
@@ -618,10 +619,11 @@ func (userdata *User) RevokeFile(filename string, target_username string) (err e
 
 	CF_Data := append(compfile.UUIDCF[:], compfile.CFEncK...)
 	CF_Data = append(CF_Data, compfile.CFHMACK...)
-	jsonEncryptionupdated, err := json.Marshal(CF_Data)
-	appendByIdDFS(record, jsonEncryptionupdated)
-
-	err = StoringData(&compfile.UUIDCF, &compfile.CFEncK, &compfile.CFHMACK, &jsonEncryptionupdated)
+	jsonEncryption, err = json.Marshal(CF_Data)
+	userlib.DatastoreSet(UUIDtemp, jsonEncryption)
+	appendByIdDFS(record, jsonEncryption)
+	jsonCompfile, err := json.Marshal(compfile)
+	err = StoringData(&compfile.UUIDCF, &compfile.CFEncK, &compfile.CFHMACK, &jsonCompfile)
 	if err != nil {
 		userlib.DebugMsg("", err)
 		return

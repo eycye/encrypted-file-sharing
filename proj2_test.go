@@ -21,6 +21,77 @@ func clear() {
 	userlib.KeystoreClear()
 }
 
+func TestMultiShare(t *testing.T) {
+	alice, _:= InitUser("alice", "fubar")
+	bob, _:= InitUser("bob", "foobar")
+	caitlyn, _ := InitUser("caitlyn", "foobar")
+	data1 := []byte("This is a test")
+	data2 := []byte("This is a test also")
+	alice.StoreFile("alicefile",data1)
+	bob.StoreFile("bobfile", data2)
+	magic_string_alice, _:= alice.ShareFile("alicefile", "caitlyn")
+	magic_string_bob, _:= bob.ShareFile("bobfile", "caitlyn")
+	err := caitlyn.ReceiveFile("caitlynfile", "alice", magic_string_bob)
+	if err == nil {
+		t.Error("Should not be able to receive it with wrong string", err)
+		return
+	}
+	err2 := caitlyn.ReceiveFile("caitlynfile", "alice", magic_string_alice)
+
+	if err2 != nil{
+		t.Error("Should be able to receive it with good string", err2)
+		return
+	}
+	_, err3 := alice.LoadFile("alicefile")
+	if err3!=nil {
+		t.Error("Should be able to load it after sharing", err3)
+		return
+	}
+
+}
+func TestMultiLogin(t *testing.T) {
+	clear()
+	u, _ := InitUser("alice", "fubar")
+	laptop, _ := GetUser("alice", "fubar")
+	phone, _ := GetUser("alice", "fubar")
+	if (!reflect.DeepEqual(u, phone) || !reflect.DeepEqual(laptop, phone)) {
+		t.Error("User is not the same")
+		return
+	}
+
+	data := []byte("This is a test")
+	u.StoreFile("file1", data)
+
+	data2, err := laptop.LoadFile("file1")
+	if err != nil {
+		t.Error("should be able to load file when login using 2 devices", err)
+		return
+	}
+
+	data3, err2 := phone.LoadFile("file1")
+	if err2 != nil {
+		t.Error("Phone is not getting the update from laptop", err2)
+		return
+	}
+
+	if (!reflect.DeepEqual(data, data2) || !reflect.DeepEqual(data2, data3) || !reflect.DeepEqual(data, data3)) {
+		t.Error("Data is not the same. Loading after one user instance stores.")
+		return
+	}
+
+	text := []byte("This is the appended msg")
+	phone.AppendFile("file1", text)
+
+	data4, _ := u.LoadFile("file1")
+	data5, _ := phone.LoadFile("file1")
+	data6, _ := laptop.LoadFile("file1")
+	if (!reflect.DeepEqual(data4, data5) || !reflect.DeepEqual(data5, data6) || !reflect.DeepEqual(data4, data6)) {
+		t.Error("Data is not the same. Loading after one user instance appends.")
+		return
+	}
+}
+
+
 func TestInit(t *testing.T) {
 	clear()
 	t.Log("Initialization test")
@@ -135,23 +206,6 @@ func TestStorage(t *testing.T) {
 		return
 	}
 
-	u2, err001 := InitUser("black2", "fubar")
-	if err001 != nil {
-		t.Error("Failed to initialize user", err001)
-		return
-	}
-	u2.StoreFile("pink", bob_file)
-	v22, erro := u2.LoadFile("pink")
-	if erro != nil {
-		t.Error("Failed to upload and download", err0)
-		return
-	}
-
-	if reflect.DeepEqual(v2, v22) {
-		t.Error("Downloaded files should not be the same", v2, v22)
-		return
-	}
-
 	alice, err := InitUser("alice", "fubar")
 	if err != nil {
 		t.Error("Failed to initialize user", err)
@@ -209,43 +263,17 @@ func TestStorage(t *testing.T) {
 
 func TestInvalidFile(t *testing.T) {
 	clear()
-	rjh, err := InitUser("rjh", "nk")
+	u, err := InitUser("alice", "fubar")
 	if err != nil {
 		t.Error("Failed to initialize user", err)
 		return
 	}
 
-	seri, err1 := InitUser("seri", "sk")
-	if err1 != nil {
-		t.Error("Failed to initialize user", err)
-		return
-	}
-	seri.StoreFile("this file does not exist", []byte("i descended!"))
-
-	_, err2 := rjh.LoadFile("this file does not exist")
+	_, err2 := u.LoadFile("this file does not exist")
 	if err2 == nil {
-		t.Error("Downloaded a nonexistent file", err2)
+		t.Error("Downloaded a ninexistent file", err2)
 		return
 	}
-
-	err3 := rjh.AppendFile("dne", []byte("hellooo"))
-	if err3 == nil {
-		t.Error("Appended to a nonexistent file", err3)
-		return
-	}
-
-	magic_string, err4 := rjh.ShareFile("this file does not exist", "seri")
-	if err4 == nil {
-		t.Error("Appended to a nonexistent file", err4)
-		return
-	}
-
-	err5 := seri.ReceiveFile("does this file exist", "rjh", magic_string)
-	if err5 == nil {
-		t.Error("Seri shouldn't be able to receive a nonexistent file", err5)
-		return
-	}
-
 }
 
 

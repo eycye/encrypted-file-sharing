@@ -93,11 +93,13 @@ type User struct {
 	UEncK []byte // symmetric key, param of SymEnc to encrypt user struct
 	HMACKey []byte
 	Location map[string]uuid.UUID // map: String filename -> UUID location of file information
+	UUIDMap uuid.UUID
 
 	// You can add other fields here if you want...
 	// Note for JSON to marshal/unmarshal, the fields need to
 	// be public (start with a capital letter)
 }
+
 
 type File struct{
 	UUIDF uuid.UUID
@@ -206,8 +208,10 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 	genUUID, _ := userlib.HMACEval(userdata.HMACKey, []byte(username))
 	userdata.UUID, _ = uuid.FromBytes(genUUID[:16]) // UUID 16 bytes
 
+
 	signingKey, VerifyK, _ := userlib.DSKeyGen()
 	PublicK, privateKey, _ := userlib.PKEKeyGen()
+	userdata.UUIDMap = uuid.New()
 	userdata.SignK = signingKey
 	userdata.PrivateK = privateKey
 	userlib.KeystoreSet(username + "_vfyk", VerifyK)
@@ -250,6 +254,7 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 func (userdata *User) StoreFile(filename string, data []byte) {
 	UUIDtemp := uuid.New()
 	// figure out what to do if filename exists
+
 	userdata.Location[filename] = UUIDtemp
 
 	var file File
@@ -293,16 +298,21 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 	jsonFiledata, _ := json.Marshal(file)
 	err = StoringData(&file.UUIDF, &file.FEncK, &file.FHMACK, &jsonFiledata)
 	if err != nil {
-		userlib.DebugMsg("", err)
+		userlib.DebugMsg("Storing failed", err)
 		return
 	}
 	jsonCFdata, _ := json.Marshal(compfile)
 	err = StoringData(&compfile.UUIDCF, &compfile.CFEncK, &compfile.CFHMACK, &jsonCFdata)
 	if err != nil {
-		userlib.DebugMsg("", err)
+		userlib.DebugMsg("Storing failed", err)
 		return
 	}
-
+	jsonMapData, _ := json.Marshal(userdata.Location)
+	err = StoringData(&userdata.UUIDMap, &userdata.UEncK, &userdata.HMACKey, &jsonMapData)
+	if err != nil {
+		userlib.DebugMsg("Storing failed", err)
+		return
+	}
 	//TODO: This is a toy implementation.
 	// UUID, _ := uuid.FromBytes([]byte(filename + userdata.Username)[:16])
 	// packaged_data, _ := json.Marshal(data)
@@ -378,6 +388,18 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 // It should give an error if the file is corrupted in any way.
 
 func (userdata *User) LoadFile(filename string) (data []byte, err error) {
+	currMapByte, err := GettingData(&userdata.UUIDMap, &userdata.UEncK, &userdata.HMACKey)
+	if err != nil {
+		userlib.DebugMsg("cant retrieve user map", err)
+		return
+	}
+	var currMap map[string]uuid.UUID
+	err = json.Unmarshal(currMapByte, &currMap)
+	if err != nil{
+		userlib.DebugMsg("Error occurs when loading User's map", err)
+		return
+	}
+	userdata.Location = currMap
 	UUIDtemp, ok := userdata.Location[filename]
 	if !ok {
 		err = errors.New("UUID not found in keystore")
@@ -406,7 +428,7 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 	var compfile CompFile
 	err = json.Unmarshal(compfileBytes, &compfile)
 	currNode, err2 := findByIdDFS(compfile.Record, userdata.Username)
-	if err2 != nil || currNode.Username == "Deleted" {
+	if err2 != nil || currNode == nil || currNode.Username == "Deleted" {
 		err = errors.New("you do not have access")
 		return
 	}
@@ -470,7 +492,7 @@ func (userdata *User) ShareFile(filename string, recipient string) (magic_string
 		}
 		tree := compfile.Record
 		currNode, err := findByIdDFS(tree, userdata.Username)
-		if err != nil {
+		if err != nil || currNode == nil {
 			err = errors.New("file not found")
 			return
 		}
@@ -505,6 +527,10 @@ func (userdata *User) ShareFile(filename string, recipient string) (magic_string
 }
 
 func findByIdDFS(node *Node, username string)(ret *Node, err error) {
+	if node == nil {
+		ret = node
+		return
+	}
 	if node.Username == username {
 		ret = node
 		return
@@ -566,6 +592,9 @@ func (userdata *User) ReceiveFile(filename string, sender string, magic_string s
 		return errors.New("use a different filename")
 	}
 	userdata.Location[filename] = UUIDreceive
+	jsonMapData, _ := json.Marshal(userdata.Location)
+	err = StoringData(&userdata.UUIDMap, &userdata.UEncK, &userdata.HMACKey, &jsonMapData)
+
 	return nil
 }
 
@@ -606,7 +635,7 @@ func (userdata *User) RevokeFile(filename string, target_username string) (err e
 		return
 	}
 	currnode, err := findByIdDFS(record, target_username)
-	if err != nil {
+	if err != nil || currnode == nil {
 		return
 	}
 	currnode.Children = nil

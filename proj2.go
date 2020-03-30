@@ -131,10 +131,6 @@ type Secret struct {
 	HMAC []byte
 }
 
-type SecretKeys struct {
-	Signed []byte
-	Enc []byte
-}
 
 // encrypts data/struct and add to Datastore
 func StoringData(UUID *uuid.UUID, EncK *[]byte, HMACK *[]byte, jsonData *[]byte) (err error) {
@@ -195,6 +191,11 @@ func GettingData(UUID *uuid.UUID, EncK *[]byte, HMACK *[]byte) (data []byte, err
 // the attackers may possess a precomputed tables containing
 // hashes of common passwords downloaded from the internet.
 func InitUser(username string, password string) (userdataptr *User, err error) {
+	if username == "" || password == "" {
+		err = errors.New("Can't have empty username/password")
+		return
+	}
+
 	var userdata User
 	userdataptr = &userdata
 
@@ -227,6 +228,10 @@ func InitUser(username string, password string) (userdataptr *User, err error) {
 // fail with an error if the user/password is invalid, or if the user
 // data was corrupted, or if the user can't be found.
 func GetUser(username string, password string) (userdataptr *User, err error) {
+	if username == "" || password == "" {
+		err = errors.New("Can't have empty username/password")
+		return
+	}
 	var userdata User
 	userdataptr = &userdata
 
@@ -252,9 +257,11 @@ func GetUser(username string, password string) (userdataptr *User, err error) {
 // The plaintext of the filename + the plaintext and length of the filename
 // should NOT be revealed to the datastore!
 func (userdata *User) StoreFile(filename string, data []byte) {
+	if filename == "" {
+		return
+	}
 	UUIDtemp := uuid.New()
 	// figure out what to do if filename exists
-
 	userdata.Location[filename] = UUIDtemp
 
 	var file File
@@ -327,6 +334,10 @@ func (userdata *User) StoreFile(filename string, data []byte) {
 // existing file, but only whatever additional information and
 // metadata you need.
 func (userdata *User) AppendFile(filename string, data []byte) (err error) {
+	if filename == "" {
+		err = errors.New("Can't have empty filename")
+		return
+	}
 	UUIDtemp, ok := userdata.Location[filename]
 	if !ok {
 		err = errors.New("UUID not found in keystore")
@@ -366,7 +377,6 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	jsonFiledata, _ := json.Marshal(file)
 	err = StoringData(&file.UUIDF, &file.FEncK, &file.FHMACK, &jsonFiledata)
 	if err != nil {
-		userlib.DebugMsg("", err)
 		return
 	}
 	index = compfile.Count
@@ -377,7 +387,6 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 	jsonCFdata, _ := json.Marshal(compfile)
 	err = StoringData(&compfile.UUIDCF, &compfile.CFEncK, &compfile.CFHMACK, &jsonCFdata)
 	if err != nil {
-		userlib.DebugMsg("", err)
 		return
 	}
 	return
@@ -388,9 +397,12 @@ func (userdata *User) AppendFile(filename string, data []byte) (err error) {
 // It should give an error if the file is corrupted in any way.
 
 func (userdata *User) LoadFile(filename string) (data []byte, err error) {
+	if filename == "" {
+		err = errors.New("Can't have empty filename")
+		return
+	}
 	currMapByte, err := GettingData(&userdata.UUIDMap, &userdata.UEncK, &userdata.HMACKey)
 	if err != nil {
-		userlib.DebugMsg("cant retrieve user map", err)
 		return
 	}
 	var currMap map[string]uuid.UUID
@@ -419,11 +431,6 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 	UUIDCF := bytesToUUID(combined[:16])
 	CFEncK := []byte(combined[16:32])
 	CFHMACK := []byte(combined[32:])
-	_, errr := userlib.DatastoreGet(UUIDCF)
-	if !errr {
-		err = errors.New("File dont exist anymore, access revoked")
-		return
-	}
  	compfileBytes, err := GettingData(&UUIDCF, &CFEncK, &CFHMACK)
 	var compfile CompFile
 	err = json.Unmarshal(compfileBytes, &compfile)
@@ -460,6 +467,10 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 // should be able to know the sender.
 func (userdata *User) ShareFile(filename string, recipient string) (magic_string string, err error) {
 		//check if file exists in sender
+		if filename == "" || recipient == "" {
+			err = errors.New("Can't have empty filename/username")
+			return
+		}
 		UUIDtemp, ok := userdata.Location[filename]
 		if !ok {
 			err = errors.New("user does not have access to file")
@@ -506,7 +517,6 @@ func (userdata *User) ShareFile(filename string, recipient string) (magic_string
 		jsonCFdata, _ := json.Marshal(compfile)
 		err = StoringData(&UUIDCF, &CFEncK, &CFHMACK, &jsonCFdata)
 		if err != nil {
-			userlib.DebugMsg("", err)
 			return
 		}
 
@@ -518,9 +528,9 @@ func (userdata *User) ShareFile(filename string, recipient string) (magic_string
 		encmsg, err := userlib.PKEEnc(encryptKey, msg[:])
 		signed, err := userlib.DSSign(userdata.SignK, msg[:])
 		//encrypt the signature and append it to encmsg
-		var secret SecretKeys
-		secret.Enc = encmsg
-		secret.Signed = signed
+		var secret Secret
+		secret.Encryption = encmsg
+		secret.HMAC = signed
 		magic_string_Bytes, _ := json.Marshal(secret)
 		magic_string = string(magic_string_Bytes)
 		return
@@ -569,15 +579,19 @@ func appendByIdDFS(node *Node, jsonEncryption []byte) {
 // what the filename even is!  However, the recipient must ensure that
 // it is authentically from the sender.
 func (userdata *User) ReceiveFile(filename string, sender string, magic_string string) (err error) {
-	var magic_string_Bytes SecretKeys
+	if filename == "" || sender == "" || magic_string == "" {
+		err = errors.New("Can't have empty filename/sender/magic_string")
+		return
+	}
+	var magic_string_Bytes Secret
 	err = json.Unmarshal([]byte(magic_string), &magic_string_Bytes)
 	if err!= nil {
 		return
 	}
 	//msg := userlib.SymDec(userdata.PrivateK, magic_string_Bytes[:len(magic_string) / 2]) // []byte of UUIDreceive
-	msg, err := userlib.PKEDec(userdata.PrivateK, magic_string_Bytes.Enc) // []byte of UUIDreceive
+	msg, err := userlib.PKEDec(userdata.PrivateK, magic_string_Bytes.Encryption) // []byte of UUIDreceive
 	//signed := userlib.SymDec(userdata.PrivateK, magic_string_Bytes[len(magic_string) / 2:])
-	signed := magic_string_Bytes.Signed
+	signed := magic_string_Bytes.HMAC
 	senderVerifyK, ok := userlib.KeystoreGet(sender + "_vfyk")
 	if !ok {
 		return errors.New("sender doesn't exist")
@@ -600,6 +614,10 @@ func (userdata *User) ReceiveFile(filename string, sender string, magic_string s
 
 // Removes target user's access.
 func (userdata *User) RevokeFile(filename string, target_username string) (err error) {
+	if filename == "" || target_username == "" {
+		err = errors.New("Can't have empty filename/username")
+		return
+	}
 	//verify the file exists
 	UUIDtemp, ok := userdata.Location[filename]
 	if !ok {
@@ -636,6 +654,7 @@ func (userdata *User) RevokeFile(filename string, target_username string) (err e
 	}
 	currnode, err := findByIdDFS(record, target_username)
 	if err != nil || currnode == nil {
+		err = errors.New("Target user not found")
 		return
 	}
 	currnode.Children = nil
@@ -645,7 +664,7 @@ func (userdata *User) RevokeFile(filename string, target_username string) (err e
 	concatFKeys := userlib.Argon2Key(IV, compfile.UUIDCF[:], 32)
 	compfile.CFEncK = concatFKeys[:16]
 	compfile.CFHMACK = concatFKeys[16:]
-	
+
 	CF_Data := append(compfile.UUIDCF[:], compfile.CFEncK...)
 	CF_Data = append(CF_Data, compfile.CFHMACK...)
 	jsonEncryption, err = json.Marshal(CF_Data)
@@ -654,7 +673,6 @@ func (userdata *User) RevokeFile(filename string, target_username string) (err e
 	jsonCompfile, err := json.Marshal(compfile)
 	err = StoringData(&compfile.UUIDCF, &compfile.CFEncK, &compfile.CFHMACK, &jsonCompfile)
 	if err != nil {
-		userlib.DebugMsg("", err)
 		return
 	}
 	return

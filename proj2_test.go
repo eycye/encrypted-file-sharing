@@ -95,13 +95,13 @@ func TestInit(t *testing.T) {
 	for i := 0; i < len(dsKeys); i++ {
 		datastoreMap[dsKeys[i]] = userlib.RandomBytes(len(dsKeys[i]))
 	}
-
 	_, err5 := GetUser("alice", "fubar")
 	_, err6 := GetUser("bob", "fubar")
 
 	if err5 == nil || err6 == nil {
 		t.Error("Datastore was corrupted but got user")
 	}
+
 
 	// t.Log() only produces output if you run with "go test -v"
 	t.Log("Got user", u)
@@ -244,13 +244,29 @@ func TestStorage(t *testing.T) {
 		return
 	}
 
-	clear()
+	userlib.DatastoreClear()
 	_, err7 := GetUser("black", "fubar")
 	if err7 == nil {
 		t.Error("Datastore cleared but still got user", err7)
 		return
 	}
 
+	keystoreMap := userlib.KeystoreGetMap()
+	alicevk, ok := keystoreMap["alice_vfyk"]
+	aliceek, ok := keystoreMap["alice_enck"]
+	if !ok {
+		t.Error("Failed to get keys")
+		return
+	}
+	keystoreMap["bob_vfyk"] = alicevk
+	keystoreMap["bob_enck"] = aliceek
+
+	userlib.KeystoreClear()
+	alicevk, ok = keystoreMap["alice_vfyk"]
+	if ok {
+		t.Error("Keystore should have been cleared")
+		return
+	}
 }
 
 
@@ -552,6 +568,36 @@ func TestShare(t *testing.T) {
 		return
 	}
 
+	datastoreMap := userlib.DatastoreGetMap()
+	var dsKeys []userlib.UUID
+	for k, _ := range datastoreMap {
+		dsKeys = append(dsKeys, k)
+	}
+	for i := 0; i < len(dsKeys); i++ {
+		val, ok := userlib.DatastoreGet(dsKeys[i])
+		if !ok {
+			continue
+		}
+		if val != nil {
+			val[0] = userlib.RandomBytes(1)[0]
+		}
+		userlib.DatastoreSet(dsKeys[i], val)
+	}
+	_, err24 := alice.ShareFile("file1", "david")
+	if err24 == nil {
+		t.Error("Datastore has been tampered; Alice should no longer be able to share her file")
+		return
+	}
+
+	for i := 0; i < len(dsKeys); i++ {
+		userlib.DatastoreSet(dsKeys[i], test1)
+	}
+	err24 = alice.RevokeFile("fileforcharley", "charley")
+	if err24 == nil {
+			t.Error("Datastore has been tampered; Alice should no longer be able to revoke her file")
+			return
+	}
+
 }
 
 
@@ -756,6 +802,21 @@ func TestAppend(t *testing.T) {
 		dsKeys = append(dsKeys, k)
 	}
 	for i := 0; i < len(dsKeys); i++ {
+		val, ok := userlib.DatastoreGet(dsKeys[i])
+		if !ok {
+			continue
+		}
+		val = append(val, file...)
+		userlib.DatastoreSet(dsKeys[i], val)
+	}
+
+	_, err4 = alex.LoadFile("hamilton")
+	if err4 == nil {
+		t.Error("Datastore has been tampered; Alex should no longer have access")
+		return
+	}
+
+	for i := 0; i < len(dsKeys); i++ {
 		userlib.DatastoreSet(dsKeys[i], file2)
 	}
 	err4 = alex.AppendFile("hamilton", additional)
@@ -773,4 +834,32 @@ func TestAppend(t *testing.T) {
 		return
 	}
 
+}
+
+
+func TestTamper(t *testing.T) {
+	clear()
+	u, err := InitUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to initialize user", err)
+		return
+	}
+
+	u.StoreFile("file1", []byte("some quality content"))
+	u.StoreFile("file2", []byte("some quality content"))
+	u.StoreFile("file3", []byte("some quality content"))
+	u.StoreFile("file3", []byte("some quality content"))
+	datastoreMap := userlib.DatastoreGetMap()
+	var keys []userlib.UUID
+	for k, _ := range datastoreMap {
+		keys = append(keys, k)
+	}
+	for i := range keys {
+		datastoreMap[keys[i]] = userlib.RandomBytes(32)
+		_, err = u.LoadFile("file" + string(i + 1))
+		if err == nil {
+			t.Error("Datastore corrupted but could still load file")
+			return
+		}
+	}
 }

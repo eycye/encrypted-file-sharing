@@ -21,125 +21,6 @@ func clear() {
 	userlib.KeystoreClear()
 }
 
-func TestEmpty(t *testing.T) {
-	_, err := InitUser("", "fubar")
-	if err == nil {
-		t.Error("empty username not allowed", err)
-		return
-	}
-	_, err1 := InitUser("bob", "")
-	if err1 == nil {
-		t.Error("empty password not allowed", err1)
-		return
-	}
-	bob, _ := InitUser("bob", "asdgfh")
-	data1 := []byte("This is a test")
-	bob.StoreFile("", data1)
-	_, err = bob.LoadFile("")
-	if err == nil {
-		t.Error("empty filename not allowed", err)
-		return
-	}
-}
-
-
-func TestMultiShare(t *testing.T) {
-	alice, _:= InitUser("alice", "fubar")
-	bob, _:= InitUser("bob", "foobar")
-	caitlyn, _ := InitUser("caitlyn", "foobar")
-	data1 := []byte("This is a test")
-	data2 := []byte("This is a test also")
-	alice.StoreFile("alicefile", data1)
-	bob.StoreFile("bobfile", data2)
-	magic_string_alice, _ := alice.ShareFile("alicefile", "caitlyn")
-	magic_string_bob, _ := bob.ShareFile("bobfile", "caitlyn")
-	err := caitlyn.ReceiveFile("caitlynfile", "alice", magic_string_bob)
-	if err == nil {
-		t.Error("Should not be able to receive it with wrong string", err)
-		return
-	}
-	err2 := caitlyn.ReceiveFile("caitlynfile", "alice", magic_string_alice)
-	if err2 != nil{
-		t.Error("Caitlyn should be able to receive it with magic_string_alice", err2)
-		return
-	}
-	_, err3 := alice.LoadFile("alicefile")
-	if err3 != nil {
-		t.Error("Alice should be able to load shared file", err3)
-		return
-	}
-	magic_string_bob, err = bob.ShareFile("", "caitlyn")
-	if err == nil {
-		t.Error("Should not be able to share with empty filename", err)
-		return
-	}
-	err2 = caitlyn.ReceiveFile("fileC", "alice", "")
-	if err2 == nil{
-		t.Error("Should not be able to receive it with empty magicstring", err2)
-		return
-	}
-	err2 = alice.RevokeFile("caitlyn", "")
-	if err2 == nil {
-		t.Error("Should not be able to revoke a file with an empty filename", err2)
-		return
-	}
-	err = alice.RevokeFile("", "alicefile")
-	if err == nil {
-		t.Error("Should not be able to revoke a file with an empty receiver", err)
-		return
-	}
-	// alice.UEncK = userlib.RandomBytes(userlib.AESBlockSize)
-	// alice.HMACKey = userlib.RandomBytes(userlib.AESBlockSize)
-	// _, err = GetUser("alice", "fubar")
-	// if err == nil {
-	// 	t.Error("User should not be able to obtain keys after tampering with user data", err)
-	// }
-}
-
-
-func TestMultiLogin(t *testing.T) {
-	clear()
-	u, _ := InitUser("alice", "fubar")
-	laptop, _ := GetUser("alice", "fubar")
-	phone, _ := GetUser("alice", "fubar")
-	if (!reflect.DeepEqual(u, phone) || !reflect.DeepEqual(laptop, phone)) {
-		t.Error("User is not the same")
-		return
-	}
-
-	data := []byte("This is a test")
-	u.StoreFile("file1", data)
-
-	data2, err := laptop.LoadFile("file1")
-	if err != nil {
-		t.Error("should be able to load file when login using 2 devices", err)
-		return
-	}
-
-	data3, err2 := phone.LoadFile("file1")
-	if err2 != nil {
-		t.Error("Phone is not getting the update from laptop", err2)
-		return
-	}
-
-	if (!reflect.DeepEqual(data, data2) || !reflect.DeepEqual(data2, data3) || !reflect.DeepEqual(data, data3)) {
-		t.Error("Data is not the same. Loading after one user instance stores.")
-		return
-	}
-
-	text := []byte("This is the appended msg")
-	phone.AppendFile("file1", text)
-
-	data4, _ := u.LoadFile("file1")
-	data5, _ := phone.LoadFile("file1")
-	data6, _ := laptop.LoadFile("file1")
-	if (!reflect.DeepEqual(data4, data5) || !reflect.DeepEqual(data5, data6) || !reflect.DeepEqual(data4, data6)) {
-		t.Error("Data is not the same. Loading after one user instance appends.")
-		return
-	}
-}
-
-
 func TestInit(t *testing.T) {
 	clear()
 	t.Log("Initialization test")
@@ -229,6 +110,50 @@ func TestInit(t *testing.T) {
 	// You probably want many more tests here.
 }
 
+
+func TestMultiInit(t *testing.T) {
+	clear()
+	u, _ := InitUser("alice", "fubar")
+	laptop, _ := GetUser("alice", "fubar")
+	phone, _ := GetUser("alice", "fubar")
+	if (!reflect.DeepEqual(u, phone) || !reflect.DeepEqual(laptop, phone)) {
+		t.Error("User is not the same")
+		return
+	}
+
+	data := []byte("This is a test")
+	u.StoreFile("file1", data)
+
+	data2, err := laptop.LoadFile("file1")
+	if err != nil {
+		t.Error("should be able to load file when login using 2 devices", err)
+		return
+	}
+
+	data3, err2 := phone.LoadFile("file1")
+	if err2 != nil {
+		t.Error("Phone is not getting the update from laptop", err2)
+		return
+	}
+
+	if (!reflect.DeepEqual(data, data2) || !reflect.DeepEqual(data2, data3) || !reflect.DeepEqual(data, data3)) {
+		t.Error("Data is not the same. Loading after one user instance stores.")
+		return
+	}
+
+	text := []byte("This is the appended msg")
+	phone.AppendFile("file1", text)
+
+	data4, _ := u.LoadFile("file1")
+	data5, _ := phone.LoadFile("file1")
+	data6, _ := laptop.LoadFile("file1")
+	if (!reflect.DeepEqual(data4, data5) || !reflect.DeepEqual(data5, data6) || !reflect.DeepEqual(data4, data6)) {
+		t.Error("Data is not the same. Loading after one user instance appends.")
+		return
+	}
+}
+
+
 func TestStorage(t *testing.T) {
 	// userlib.SetDebugStatus(true)
 	clear()
@@ -240,6 +165,19 @@ func TestStorage(t *testing.T) {
 	}
 
 	v := []byte("This is a test")
+	dsMap := userlib.DatastoreGetMap()
+	var dsKeys []userlib.UUID
+	for k, _ := range dsMap {
+		dsKeys = append(dsKeys, k)
+	}
+	userlib.DatastoreSet(dsKeys[0], v)
+
+	_, err1 := GetUser("black", "fubar")
+	if err1 == nil {
+		t.Error("Datastore corrupted, shouldn't be able to get user", err1)
+		return
+	}
+
 	bob_file := []byte("This is a different test")
 	u.StoreFile("pink", v)
 
@@ -306,6 +244,13 @@ func TestStorage(t *testing.T) {
 		return
 	}
 
+	clear()
+	_, err7 := GetUser("black", "fubar")
+	if err7 == nil {
+		t.Error("Datastore cleared but still got user", err7)
+		return
+	}
+
 }
 
 
@@ -327,6 +272,25 @@ func TestInvalidFile(t *testing.T) {
 	ufile, _ := u.LoadFile("use")
 	if ufile != nil {
 		ufile[0] = (userlib.RandomBytes(1))[0]
+	}
+
+	_, err0 := InitUser("", "fubar")
+	if err0 == nil {
+		t.Error("empty username not allowed", err0)
+		return
+	}
+	_, err1 := InitUser("bob", "")
+	if err1 == nil {
+		t.Error("empty password not allowed", err1)
+		return
+	}
+	bob, _ := InitUser("bob", "asdgfh")
+	data1 := []byte("This is a test")
+	bob.StoreFile("", data1)
+	_, err = bob.LoadFile("")
+	if err == nil {
+		t.Error("empty filename not allowed", err)
+		return
 	}
 }
 
@@ -396,6 +360,11 @@ func TestShare(t *testing.T) {
 		return
 	}
 
+	_, err6 = bob.ShareFile("file1", "alice")
+	if err6 == nil {
+		t.Error("Bob doesn't have file1", err6)
+	}
+
 	err7 := bob.ReceiveFile("file2", "alice", magic_string)
 	if err7 != nil {
 		t.Error("Failed to receive the shared message", err7)
@@ -424,6 +393,7 @@ func TestShare(t *testing.T) {
 		t.Error("Bob doesn't have a file named 'file1'", err10)
 		return
 	}
+
 	magic_string2, err11 := bob.ShareFile("file2", "david")
 	if err11 != nil {
 		t.Error("Bob failed to share existing file", err11)
@@ -545,7 +515,14 @@ func TestShare(t *testing.T) {
 	test5 := []byte("Alice's last test!!!!!")
 	alice.StoreFile("file2forcharley", test5)
 
-	magic_string6, err23 := alice.ShareFile("file2forcharley", "charley")
+	// oof ?
+	magic_string6, err23 := alice.ShareFile("file1", "charlie")
+	if err23 == nil {
+		t.Error("No user named charlie", err23)
+		return
+	}
+
+	magic_string6, err23 = alice.ShareFile("file2forcharley", "charley")
 	if err23 != nil {
 		t.Error("Sharing failed", err23)
 		return
@@ -555,7 +532,83 @@ func TestShare(t *testing.T) {
 		t.Error("Charley shouldn't be able to save two files unde the same name", err22)
 		return
 	}
+
+	random_string := string(userlib.RandomBytes(len(magic_string6)))
+	err23 = charley.ReceiveFile("shouldntsave", "alice", random_string)
+	if err23 == nil {
+		t.Error("Charley should not be able to receive file with a random magic_string", err23)
+		return
+	}
+
+	err23 = charley.ReceiveFile("shouldntsave", "alice", "")
+	if err23 == nil {
+		t.Error("Charley should not be able to receive file with an empty magic_string", err23)
+		return
+	}
+
+	err23 = charley.ReceiveFile("shouldntsave", "Malice", magic_string6)
+	if err23 == nil {
+		t.Error("No user named Malice", err)
+		return
+	}
+
 }
+
+
+func TestSharePro(t *testing.T) {
+	alice, _:= InitUser("alice", "fubar")
+	bob, _:= InitUser("bob", "foobar")
+	caitlyn, _ := InitUser("caitlyn", "foobar")
+	data1 := []byte("This is a test")
+	data2 := []byte("This is a test also")
+	alice.StoreFile("alicefile", data1)
+	bob.StoreFile("bobfile", data2)
+	magic_string_alice, _ := alice.ShareFile("alicefile", "caitlyn")
+	magic_string_bob, _ := bob.ShareFile("bobfile", "caitlyn")
+	err := caitlyn.ReceiveFile("caitlynfile", "alice", magic_string_bob)
+	if err == nil {
+		t.Error("Should not be able to receive it with wrong string", err)
+		return
+	}
+	err2 := caitlyn.ReceiveFile("caitlynfile", "alice", magic_string_alice)
+	// oof ?
+	if err2 != nil{
+		t.Error("Caitlyn should be able to receive it with magic_string_alice", err2)
+		return
+	}
+	_, err3 := alice.LoadFile("alicefile")
+	if err3 != nil {
+		t.Error("Alice should be able to load shared file", err3)
+		return
+	}
+	magic_string_bob, err = bob.ShareFile("", "caitlyn")
+	if err == nil {
+		t.Error("Should not be able to share with empty filename", err)
+		return
+	}
+	err2 = caitlyn.ReceiveFile("fileC", "alice", "")
+	if err2 == nil{
+		t.Error("Should not be able to receive it with empty magicstring", err2)
+		return
+	}
+	err2 = alice.RevokeFile("caitlyn", "")
+	if err2 == nil {
+		t.Error("Should not be able to revoke a file with an empty filename", err2)
+		return
+	}
+	err = alice.RevokeFile("", "alicefile")
+	if err == nil {
+		t.Error("Should not be able to revoke a file with an empty receiver", err)
+		return
+	}
+	// alice.UEncK = userlib.RandomBytes(userlib.AESBlockSize)
+	// alice.HMACKey = userlib.RandomBytes(userlib.AESBlockSize)
+	// _, err = GetUser("alice", "fubar")
+	// if err == nil {
+	// 	t.Error("User should not be able to obtain keys after tampering with user data", err)
+	// }
+}
+
 
 func TestAppend(t *testing.T) {
 	clear()
@@ -596,6 +649,16 @@ func TestAppend(t *testing.T) {
 
 	aaron.StoreFile("burr", file2)
 	magic1, err2 := alex.ShareFile("hamilton", "bob")
+	if err2 != nil {
+		t.Error("Alex failed to share file with Bob", err2)
+		return
+	}
+	err2 = bob.AppendFile("hamilton", additional)
+	if err2 == nil {
+		t.Error("Bob doesn't have file named hamilton", err2)
+		return
+	}
+
 	err2 = alex.RevokeFile("hamilton", "aaron")
 	if err2 == nil {
 		t.Error("Alex never shared file with Aaron", err2)
@@ -609,9 +672,10 @@ func TestAppend(t *testing.T) {
 		return
 	}
 	//
-	// hi := []byte("")
+	// problem with ApendFile? following block errors, loading2 = []
+	//
 	// loading2, _ := bob.LoadFile("bobfile")
-	// _ = bob.AppendFile("bobfile", hi)
+	// _ = bob.AppendFile("bobfile", []byte(""))
 
 	// if !reflect.DeepEqual(expectedAppend, loading2) {
 	// 	t.Error("Loaded content should be the same as expected", expectedAppend, loading2)
@@ -634,6 +698,22 @@ func TestAppend(t *testing.T) {
 		return
 	}
 
+	err2 = alex.RevokeFile("hamilton", "bob")
+	if err != nil {
+		t.Error("Alex failed to revoke Bob's access to file hamilton")
+	}
+
+	err2 = bob.AppendFile("bobfile", additional)
+	if err == nil {
+		t.Error("Bob should not be able to append to a file he no longer has access to")
+	}
+
+	_, err2 = bob.ShareFile("bobfile", "aaron")
+	if err2 == nil {
+		t.Error("Bob should not be able to share a file he no longer has access to", err2)
+		return
+	}
+
 	err2 = bob.ReceiveFile("", "alex", magic1)
 	if err2 == nil {
 		t.Error("Should not be able to receive file with empty name", err2)
@@ -642,6 +722,20 @@ func TestAppend(t *testing.T) {
 	err2 = bob.ReceiveFile("bobfile", "", magic1)
 	if err2 == nil {
 		t.Error("Should not be able to receive file with no sender", err2)
+		return
+	}
+
+	datastoreMap := userlib.DatastoreGetMap()
+	var dsKeys []userlib.UUID
+	for k, _ := range datastoreMap {
+		dsKeys = append(dsKeys, k)
+	}
+	for i := 0; i < len(dsKeys); i++ {
+		userlib.DatastoreSet(dsKeys[i], file2)
+	}
+	err4 = alex.AppendFile("hamilton", additional)
+	if err4 == nil {
+		t.Error("Alex should not be able to append file because datastore corrupted", err4)
 		return
 	}
 

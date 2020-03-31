@@ -476,7 +476,7 @@ func (userdata *User) ShareFile(filename string, recipient string) (magic_string
 			err = errors.New("user does not have access to file")
 			return
 		}
-			//getting the compfile from datastore
+		//getting the compfile from datastore
 		jsonEncryption, ok := userlib.DatastoreGet(UUIDtemp)
 		if !ok {
 			err = errors.New("UUID not found in keystore")

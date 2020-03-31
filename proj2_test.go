@@ -516,9 +516,9 @@ func TestShare(t *testing.T) {
 	alice.StoreFile("file2forcharley", test5)
 
 	// oof ?
-	magic_string6, err23 := alice.ShareFile("file1", "charlie")
+	magic_string6, err23 := alice.ShareFile("file2forcharley", "charlie")
 	if err23 == nil {
-		t.Error("No user named charlie", err23)
+		t.Error("No user named charlie")
 		return
 	}
 
@@ -556,27 +556,53 @@ func TestShare(t *testing.T) {
 
 
 func TestSharePro(t *testing.T) {
-	alice, _:= InitUser("alice", "fubar")
-	bob, _:= InitUser("bob", "foobar")
-	caitlyn, _ := InitUser("caitlyn", "foobar")
+	clear()
+	alice, err := InitUser("alice", "fubar")
+	if err != nil {
+		t.Error("Failed to initiate user", err)
+		return
+	}
+
+	bob, err1 := InitUser("bob", "foobar")
+	if err1 != nil {
+		t.Error("Failed to initiate user", err1)
+		return
+	}
+
+	caitlyn, err2 := InitUser("caitlyn", "foobar")
+	if err2 != nil {
+		t.Error("Failed to initiate user", err2)
+		return
+	}
+
 	data1 := []byte("This is a test")
-	data2 := []byte("This is a test also")
+	data2 := []byte("This is anothherrrrr test")
 	alice.StoreFile("alicefile", data1)
 	bob.StoreFile("bobfile", data2)
-	magic_string_alice, _ := alice.ShareFile("alicefile", "caitlyn")
-	magic_string_bob, _ := bob.ShareFile("bobfile", "caitlyn")
-	err := caitlyn.ReceiveFile("caitlynfile", "alice", magic_string_bob)
+	magic_string_alice, err3 := alice.ShareFile("alicefile", "caitlyn")
+	if err3 != nil {
+		t.Error("Failed to share file", err3)
+		return
+	}
+
+	magic_string_bob, err4 := bob.ShareFile("bobfile", "caitlyn")
+	if err4 != nil {
+		t.Error("Failed to share file", err4)
+		return
+	}
+
+	err = caitlyn.ReceiveFile("caitlynfile", "alice", magic_string_bob)
 	if err == nil {
 		t.Error("Should not be able to receive it with wrong string", err)
 		return
 	}
-	err2 := caitlyn.ReceiveFile("caitlynfile", "alice", magic_string_alice)
+	err2 = caitlyn.ReceiveFile("caitlynfile", "alice", magic_string_alice)
 	// oof ?
 	if err2 != nil{
 		t.Error("Caitlyn should be able to receive it with magic_string_alice", err2)
 		return
 	}
-	_, err3 := alice.LoadFile("alicefile")
+	_, err3 = alice.LoadFile("alicefile")
 	if err3 != nil {
 		t.Error("Alice should be able to load shared file", err3)
 		return
@@ -671,12 +697,11 @@ func TestAppend(t *testing.T) {
 		t.Error("Alex should not have access to Aaron's file", err2)
 		return
 	}
-	//
-	// problem with ApendFile? following block errors, loading2 = []
-	//
+
+	// // problem with ApendFile? following block errors, loading2 = []
 	// loading2, _ := bob.LoadFile("bobfile")
 	// _ = bob.AppendFile("bobfile", []byte(""))
-
+	//
 	// if !reflect.DeepEqual(expectedAppend, loading2) {
 	// 	t.Error("Loaded content should be the same as expected", expectedAppend, loading2)
 	// 	return
@@ -704,8 +729,8 @@ func TestAppend(t *testing.T) {
 	}
 
 	err2 = bob.AppendFile("bobfile", additional)
-	if err == nil {
-		t.Error("Bob should not be able to append to a file he no longer has access to")
+	if err2 == nil {
+		t.Error("Bob should not be able to append to a file he no longer has access to", err2)
 	}
 
 	_, err2 = bob.ShareFile("bobfile", "aaron")
@@ -736,6 +761,15 @@ func TestAppend(t *testing.T) {
 	err4 = alex.AppendFile("hamilton", additional)
 	if err4 == nil {
 		t.Error("Alex should not be able to append file because datastore corrupted", err4)
+		return
+	}
+
+	for i := 0; i < len(dsKeys); i++ {
+		userlib.DatastoreDelete(dsKeys[i])
+	}
+	_, err4 = alex.LoadFile("hamilton")
+	if err4 == nil {
+		t.Error("Datastore has been tampered; Alex should no longer have access")
 		return
 	}
 

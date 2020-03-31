@@ -467,10 +467,6 @@ func (userdata *User) LoadFile(filename string) (data []byte, err error) {
 // should be able to know the sender.
 func (userdata *User) ShareFile(filename string, recipient string) (magic_string string, err error) {
 		//check if file exists in sender
-		if filename == "" || recipient == "" {
-			err = errors.New("Can't have empty filename/username")
-			return
-		}
 		UUIDtemp, ok := userdata.Location[filename]
 		if !ok {
 			err = errors.New("user does not have access to file")
@@ -479,7 +475,7 @@ func (userdata *User) ShareFile(filename string, recipient string) (magic_string
 		//getting the compfile from datastore
 		jsonEncryption, ok := userlib.DatastoreGet(UUIDtemp)
 		if !ok {
-			err = errors.New("UUID not found in keystore")
+			err = errors.New("UUID not found in datastore")
 			return
 		}
 		UUIDreceive := uuid.New()
@@ -487,7 +483,7 @@ func (userdata *User) ShareFile(filename string, recipient string) (magic_string
 		//The following lines are for updating record
 		combined := make([]byte, 48)
 		err = json.Unmarshal(jsonEncryption, &combined)
-		if err!= nil {
+		if err != nil {
 			return
 		}
 		UUIDCF := bytesToUUID(combined[:16])
@@ -504,9 +500,10 @@ func (userdata *User) ShareFile(filename string, recipient string) (magic_string
 		tree := compfile.Record
 		currNode, err := findByIdDFS(tree, userdata.Username)
 		if err != nil || currNode == nil {
-			err = errors.New("file not found")
+			err = errors.New("file/user not found")
 			return
 		}
+
 		var child Node
 		child.Username = recipient
 		child.UUIDreceive = UUIDreceive

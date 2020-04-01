@@ -42,6 +42,12 @@ func TestInit(t *testing.T) {
 		return
 	}
 
+	_, err = InitUser("alice", "lakebrienz")
+	if err != nil {
+		t.Error("Failed to initialize user", err)
+		return
+	}
+
 	_, err1 := InitUser("bob", "fubar") //bob
 	if err1 != nil {
 		// t.Error says the test fails
@@ -111,12 +117,12 @@ func TestInit(t *testing.T) {
 }
 
 
-func TestMultiInit(t *testing.T) {
+func TestMultiUsers(t *testing.T) {
 	clear()
 	u, _ := InitUser("alice", "fubar")
 	laptop, _ := GetUser("alice", "fubar")
 	phone, _ := GetUser("alice", "fubar")
-	if (!reflect.DeepEqual(u, phone) || !reflect.DeepEqual(laptop, phone)) {
+	if !reflect.DeepEqual(u, phone) || !reflect.DeepEqual(laptop, phone) {
 		t.Error("User is not the same")
 		return
 	}
@@ -136,7 +142,7 @@ func TestMultiInit(t *testing.T) {
 		return
 	}
 
-	if (!reflect.DeepEqual(data, data2) || !reflect.DeepEqual(data2, data3) || !reflect.DeepEqual(data, data3)) {
+	if !reflect.DeepEqual(data, data2) || !reflect.DeepEqual(data2, data3) || !reflect.DeepEqual(data, data3) {
 		t.Error("Data is not the same. Loading after one user instance stores.")
 		return
 	}
@@ -147,7 +153,7 @@ func TestMultiInit(t *testing.T) {
 	data4, _ := u.LoadFile("file1")
 	data5, _ := phone.LoadFile("file1")
 	data6, _ := laptop.LoadFile("file1")
-	if (!reflect.DeepEqual(data4, data5) || !reflect.DeepEqual(data5, data6) || !reflect.DeepEqual(data4, data6)) {
+	if !reflect.DeepEqual(data4, data5) || !reflect.DeepEqual(data5, data6) || !reflect.DeepEqual(data4, data6) {
 		t.Error("Data is not the same. Loading after one user instance appends.")
 		return
 	}
@@ -191,6 +197,24 @@ func TestStorage(t *testing.T) {
 		t.Error("Downloaded file is not the same", v, v2)
 		return
 	}
+
+	u.StoreFile("pink", []byte("twenty please"))
+
+	v3, err00 := u.LoadFile("pink")
+	if err00 != nil {
+		t.Error("Failed to upload and download", err00)
+		return
+	}
+
+	if reflect.DeepEqual(v2, v3) {
+		t.Error("Should have overwritten", v2, v3)
+		return
+	}
+
+	currMap := make(map[userlib.UUID][]byte)
+	for k, v := range userlib.DatastoreGetMap() {
+		currMap[k] = v
+  }
 
 	alice, err := InitUser("alice", "fubar")
 	if err != nil {
@@ -236,11 +260,53 @@ func TestStorage(t *testing.T) {
 		return
 	}
 
+	err5 = bob.AppendFile("file1", data2)
+	if err5 == nil {
+		t.Error("Bob should not be able to append to the file because he is not the owner", err5)
+		return
+	}
+
+	_, err5 = bob.ShareFile("file1", "charley")
+	if err5 == nil {
+		t.Error("Bob should not be able to share the file because he is not the owner", err5)
+		return
+	}
+
+	err5 = bob.RevokeFile("file1", "charley")
+	if err5 == nil {
+		t.Error("Bob should not be able to revoke the file because he is not the owner", err5)
+		return
+	}
+
 	//testing Bob storing a different file with same name should not affect alice's file or equal to alice's file
 	bob.StoreFile("file1", bob_file)
 	notFile1Again, err6 := bob.LoadFile("file1")
-	if err6 != nil || reflect.DeepEqual(data1, notFile1Again) {
+	if err6 != nil {
+		t.Error("Load file failed", err6)
+		return
+	}
+	if reflect.DeepEqual(data1, notFile1Again) {
 		t.Error("Bob's file should not be the same anymore", err6)
+		return
+	}
+
+	dsMap = userlib.DatastoreGetMap()
+	for k, _ := range dsMap {
+		value, ok := currMap[k]
+		if !ok {
+			dsMap[k] = userlib.RandomBytes(len(value))
+		}
+	}
+
+	_, err6 = GetUser("alice", "fubar")
+	if err6 == nil {
+		t.Error("Datastore corrupted but still got user")
+		return
+	}
+
+	_, err6 = bob.LoadFile("file1")
+	if err6 == nil {
+		t.Error("Datastore corrupted but still got file")
 		return
 	}
 
@@ -248,23 +314,6 @@ func TestStorage(t *testing.T) {
 	_, err7 := GetUser("black", "fubar")
 	if err7 == nil {
 		t.Error("Datastore cleared but still got user", err7)
-		return
-	}
-
-	keystoreMap := userlib.KeystoreGetMap()
-	alicevk, ok := keystoreMap["alice_vfyk"]
-	aliceek, ok := keystoreMap["alice_enck"]
-	if !ok {
-		t.Error("Failed to get keys")
-		return
-	}
-	keystoreMap["bob_vfyk"] = alicevk
-	keystoreMap["bob_enck"] = aliceek
-
-	userlib.KeystoreClear()
-	alicevk, ok = keystoreMap["alice_vfyk"]
-	if ok {
-		t.Error("Keystore should have been cleared")
 		return
 	}
 }
@@ -280,7 +329,7 @@ func TestInvalidFile(t *testing.T) {
 
 	_, err2 := u.LoadFile("this file does not exist")
 	if err2 == nil {
-		t.Error("Downloaded a ninexistent file", err2)
+		t.Error("Loaded a nonexistent file", err2)
 		return
 	}
 
@@ -308,8 +357,28 @@ func TestInvalidFile(t *testing.T) {
 		t.Error("empty filename not allowed", err)
 		return
 	}
+	bob.StoreFile("canyousee", data1)
+	heize, err := bob.LoadFile("canyousee")
+	if err != nil {
+		t.Error("Load file failed", err)
+		return
+	}
+	delluna := append(heize, []byte("hotel")...)
+	bob.StoreFile("canyousee", delluna)
+	heize2, err1 := bob.LoadFile("canyousee")
+	if err1 != nil {
+		t.Error("Load file failed", err1)
+		return
+	}
+	if reflect.DeepEqual(heize, heize2) {
+		t.Error("Bob's file should not be the same anymore")
+		return
+	}
+	if !reflect.DeepEqual(delluna, heize2) {
+		t.Error("Bob's appended file should be the same", delluna, heize2)
+		return
+	}
 }
-
 
 func TestShare(t *testing.T) {
 	clear()
@@ -403,8 +472,13 @@ func TestShare(t *testing.T) {
 		return
 	}
 
-	var magic_string2 string
 	magic_string2, err10 := bob.ShareFile("file1", "david")
+	if err10 == nil {
+		t.Error("Bob doesn't have a file named 'file1'", err10)
+		return
+	}
+
+	err10 = bob.RevokeFile("file1", "david")
 	if err10 == nil {
 		t.Error("Bob doesn't have a file named 'file1'", err10)
 		return
@@ -477,35 +551,66 @@ func TestShare(t *testing.T) {
 			return
 	}
 
+	_, err16 = bob.ShareFile("file2", "charley")
+	if err16 == nil {
+			t.Error("Bob should not have access anymore", err16)
+			return
+	}
+
+	err16 = bob.RevokeFile("file2", "david")
+	if err16 == nil {
+			t.Error("Bob should not have access anymore", err16)
+			return
+	}
+
+	_, err16 = frank.LoadFile("frankfile")
+	if err16 != nil {
+			t.Error("Frank sould still have access to Alice's file", err16)
+			return
+	}
+
 	_, err17 := david.LoadFile("file4")
 	if err17 == nil {
 			t.Error("David should not have access anymore", err17)
 			return
 	}
-	test2 := []byte("sss")
-	err22 := david.AppendFile("file4", test2)
-	if err22 == nil {
-		t.Error("David should not have access anymore", err22)
+	err17 = david.AppendFile("file4", []byte("sss"))
+	if err17 == nil {
+		t.Error("David should not have access anymore")
 		return
 	}
+
+	err17 = david.ReceiveFile("file4", "bob", magic_string2)
+	if err17 == nil {
+		t.Error("David should not have access anymore")
+		return
+	}
+
 	_, err20 := eve.LoadFile("evefile")
 	if err20 != nil {
 			t.Error("Eve failed to load", err20)
 			return
 	}
-	err17 = alice.RevokeFile("file1", "frank")
+
+	// // oop frank shouldn't be able to revoke eve's access
+	// err17 = frank.RevokeFile("frankfile", "eve")
+	// if err17 == nil {
+	// 		t.Error("Frank shouldn't be able to revoke access since he is not the owner")
+	// 		return
+	// }
+	err17 = alice.RevokeFile("file1", "eve")
 	if err17 != nil {
 			t.Error("Revocation failed", err17)
 			return
 	}
 	_, err18 := frank.LoadFile("frankfile")
-	if err18 == nil {
-			t.Error("frank's access should have been revoked by Alice", err18)
+	if err18 != nil {
+			t.Error("Frank still has access", err18)
 			return
 	}
 	_, err21 := eve.LoadFile("evefile")
 	if err21 == nil {
-		t.Error("frank's access should have been revoked by Alice", err21)
+		t.Error("Eve's access should have been revoked by Alice", err21)
 		return
 	}
 
@@ -522,30 +627,51 @@ func TestShare(t *testing.T) {
 		t.Error("Charley shouldn't be able to get Alice's shared file without the correct magic string", err22)
 		return
 	}
+	err22 = charley.ReceiveFile("charleysfile", "alice", magic_string2)
+	if err22 == nil {
+		t.Error("Charley shouldn't be able to get Alice's shared file without the correct magic string", err22)
+		return
+	}
 	err22 = charley.ReceiveFile("charleysfile", "alice", magic_string5)
 	if err22 != nil {
 		t.Error("Receiving file failed", err22)
+		return
+	}
+	charley1, err23 := charley.LoadFile("charleysfile")
+	if err23 != nil {
+		t.Error("Load received file failed", err23)
 		return
 	}
 
 	test5 := []byte("Alice's last test!!!!!")
 	alice.StoreFile("file2forcharley", test5)
 
-	// oof ?
-	magic_string6, err23 := alice.ShareFile("file2forcharley", "charlie")
-	if err23 == nil {
-		t.Error("No user named charlie")
-		return
-	}
+	// // is this defined behavior
+	// magic_string6, err23 := alice.ShareFile("file2forcharley", "charlie")
+	// if err23 == nil {
+	// 	t.Error("No user named charlie")
+	// 	return
+	// }
 
-	magic_string6, err23 = alice.ShareFile("file2forcharley", "charley")
+	magic_string6, err23 := alice.ShareFile("file2forcharley", "charley")
 	if err23 != nil {
 		t.Error("Sharing failed", err23)
 		return
 	}
 	err23 = charley.ReceiveFile("charleysfile", "alice", magic_string6)
 	if err23 == nil {
-		t.Error("Charley shouldn't be able to save two files unde the same name", err22)
+		t.Error("Cannot save two files under same name")
+		return
+	}
+
+	charley2, err23 := charley.LoadFile("charleysfile")
+	if err23 != nil {
+		t.Error("Load received file failed", err23)
+		return
+	}
+
+	if !reflect.DeepEqual(charley1, charley2) {
+		t.Error("Should be the same file", charley1, charley2)
 		return
 	}
 
@@ -581,7 +707,7 @@ func TestShare(t *testing.T) {
 		if val != nil {
 			val[0] = userlib.RandomBytes(1)[0]
 		}
-		userlib.DatastoreSet(dsKeys[i], val)
+		datastoreMap[dsKeys[i]] = val
 	}
 	_, err24 := alice.ShareFile("file1", "david")
 	if err24 == nil {
@@ -590,8 +716,15 @@ func TestShare(t *testing.T) {
 	}
 
 	for i := 0; i < len(dsKeys); i++ {
-		userlib.DatastoreSet(dsKeys[i], test1)
+		datastoreMap[dsKeys[i]] = test1
 	}
+
+	_, err24 = alice.LoadFile("file1")
+	if err24 == nil {
+		t.Error("Datastore has been tampered; Alice should no longer be able to load her file")
+		return
+	}
+
 	err24 = alice.RevokeFile("fileforcharley", "charley")
 	if err24 == nil {
 			t.Error("Datastore has been tampered; Alice should no longer be able to revoke her file")
@@ -772,11 +905,13 @@ func TestAppend(t *testing.T) {
 	err2 = alex.RevokeFile("hamilton", "bob")
 	if err != nil {
 		t.Error("Alex failed to revoke Bob's access to file hamilton")
+		return
 	}
 
 	err2 = bob.AppendFile("bobfile", additional)
 	if err2 == nil {
 		t.Error("Bob should not be able to append to a file he no longer has access to", err2)
+		return
 	}
 
 	_, err2 = bob.ShareFile("bobfile", "aaron")
@@ -807,7 +942,7 @@ func TestAppend(t *testing.T) {
 			continue
 		}
 		val = append(val, file...)
-		userlib.DatastoreSet(dsKeys[i], val)
+		datastoreMap[dsKeys[i]] = val
 	}
 
 	_, err4 = alex.LoadFile("hamilton")

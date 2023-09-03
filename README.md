@@ -1,4 +1,7 @@
-# CS161 Spring 2020 Project 2: Secure File Store
-Done: User Struct; InitUser()
+# Secure File Store
 
-To Do: File Struct, CompFile Struct; GetUser(), AppendFile(), LoadFile(), ShareFile(), ReceiveFile(), RevokeFile()
+Supported operations and structures
+- User Struct, File Struct, CompFile Struct
+- InitUser(), GetUser()
+- AppendFile(), LoadFile()
+- ShareFile(), ReceiveFile(), RevokeFile()
